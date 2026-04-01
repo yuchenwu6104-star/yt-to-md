@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 本地狀態（不 commit）
+.claude/skills/yt/scripts/processed_videos.json
+.claude/skills/yt/scripts/watcher.log
+
+# 本地設定
+.claude/settings.local.json
+
+# 測試用暫存
+.claude/skills/invest/scripts/test_memo.md

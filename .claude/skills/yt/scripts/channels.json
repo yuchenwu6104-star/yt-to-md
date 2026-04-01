@@ -1,0 +1,23 @@
+{
+  "settings": {
+    "min_duration_minutes": 15,
+    "lookback_days": 3,
+    "max_per_channel": 5
+  },
+  "channels": [
+    {"name": "a16z",                      "handle": "@a16z",                            "category": "VC",      "enabled": true},
+    {"name": "All-In Podcast",            "handle": "@allin",                           "category": "VC",      "enabled": true},
+    {"name": "Lex Fridman",               "handle": "@lexfridman",                      "category": "Tech",    "enabled": true},
+    {"name": "Y Combinator",              "handle": "@ycombinator",                     "category": "Tech",    "enabled": true},
+    {"name": "20VC",                      "handle": "@20VC",                            "category": "VC",      "enabled": true},
+    {"name": "Acquired",                  "handle": "@AcquiredFM",                      "category": "VC",      "enabled": true},
+    {"name": "Invest Like the Best",      "handle": "@joincolossus",                    "category": "VC",      "enabled": true},
+    {"name": "BG2 Pod",                   "handle": "@BG2Pod",                          "category": "VC",      "enabled": true},
+    {"name": "Dwarkesh Podcast",          "handle": "@DwarkeshPatel",                   "category": "Tech",    "enabled": true},
+    {"name": "Macro Voices",              "handle": "@MacroVoices",                     "category": "Macro",   "enabled": false},
+    {"name": "Real Vision",               "handle": "@realvision",                      "category": "Macro",   "enabled": false},
+    {"name": "Odd Lots",                  "handle": "@BloombergPodcasts",               "category": "Macro",   "enabled": true},
+    {"name": "In Good Company",           "handle": "@NorgesBankInvestmentManagement",  "category": "Macro",   "enabled": true},
+    {"name": "Bloomberg Markets",         "handle": "@bloombergtv",                     "category": "Finance", "enabled": false}
+  ]
+}
