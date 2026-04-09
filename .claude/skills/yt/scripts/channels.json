@@ -1,7 +1,7 @@
 {
   "settings": {
     "min_duration_minutes": 15,
-    "lookback_days": 3,
+    "lookback_days": 30,
     "max_per_channel": 5
   },
   "channels": [
@@ -11,9 +11,17 @@
     {"name": "Y Combinator",              "handle": "@ycombinator",                     "category": "Tech",    "enabled": true},
     {"name": "20VC",                      "handle": "@20VC",                            "category": "VC",      "enabled": true},
     {"name": "Acquired",                  "handle": "@AcquiredFM",                      "category": "VC",      "enabled": true},
-    {"name": "Invest Like the Best",      "handle": "@joincolossus",                    "category": "VC",      "enabled": true},
+    {"name": "Invest Like the Best",      "handle": "@ILTB_Podcast",                    "category": "VC",      "enabled": true},
     {"name": "BG2 Pod",                   "handle": "@BG2Pod",                          "category": "VC",      "enabled": true},
     {"name": "Dwarkesh Podcast",          "handle": "@DwarkeshPatel",                   "category": "Tech",    "enabled": true},
+    {"name": "Founders Podcast",          "handle": "@founderspodcast1",                "category": "VC",      "enabled": true},
+    {"name": "Capital Allocators",        "handle": "@CapitalAllocatorsPodcast",        "category": "VC",      "enabled": true},
+    {"name": "This Week in Startups",     "handle": "@startups",                        "category": "VC",      "enabled": true},
+    {"name": "The Diary of a CEO",        "handle": "@TheDiaryOfACEO",                  "category": "Tech",    "enabled": true},
+    {"name": "Patrick Boyle",             "handle": "@PBoyle",                          "category": "Macro",   "enabled": true},
+    {"name": "George Gammon",             "handle": "@georgegammon",                    "category": "Macro",   "enabled": true},
+    {"name": "No Priors",                 "handle": "@NoPriorsPodcast",                 "category": "AI",      "enabled": true},
+    {"name": "Stratechery",               "handle": "@Stratechery",                     "category": "Tech",    "enabled": true},
     {"name": "Macro Voices",              "handle": "@MacroVoices",                     "category": "Macro",   "enabled": false},
     {"name": "Real Vision",               "handle": "@realvision",                      "category": "Macro",   "enabled": false},
     {"name": "Odd Lots",                  "handle": "@BloombergPodcasts",               "category": "Macro",   "enabled": true},

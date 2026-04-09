@@ -56,6 +56,8 @@ def detect_input_type(s: str) -> str:
         return "url"
     if s.lower().endswith(".pdf"):
         return "pdf"
+    if s.lower().endswith(".docx"):
+        return "docx"
     return "text"
 
 
@@ -85,6 +87,13 @@ def extract_from_pdf(path: str) -> str:
             if t:
                 pages.append(t)
     return "\n\n".join(pages)
+
+
+def extract_from_docx(path: str) -> str:
+    from docx import Document
+    doc = Document(path)
+    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+    return "\n\n".join(paragraphs)
 
 
 def extract_from_text(path: str) -> str:
@@ -348,6 +357,10 @@ def main(input_str: str) -> None:
         content = extract_from_pdf(input_str)
         source_desc = Path(input_str).name
         local_path = None  # PDF 不寫回
+    elif input_type == "docx":
+        content = extract_from_docx(input_str)
+        source_desc = Path(input_str).name
+        local_path = None  # docx 不寫回
     else:
         content = extract_from_text(input_str)
         source_desc = Path(input_str).name

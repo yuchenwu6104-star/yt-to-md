@@ -51,23 +51,26 @@ def save_processed(video_ids: set):
 
 def fetch_channel_videos(handle: str, lookback_days: int, max_videos: int) -> list[dict]:
     """
-    用 yt-dlp 抓取頻道最新影片清單（含 duration）。
+    用 yt-dlp 抓取頻道最新影片清單（含 duration、upload_date）。
     回傳 list of {video_id, title, duration_seconds}
-    注意：flat-playlist 模式不回傳 upload_date，改靠 processed_videos.json 防重複。
+    不使用 --flat-playlist，確保 upload_date 可用，讓 --dateafter 真正生效。
+    Python 端再做第二層日期過濾作為保險。
     """
     url = f"https://www.youtube.com/{handle}/videos"
+    cutoff = datetime.now() - timedelta(days=lookback_days)
+    dateafter = cutoff.strftime("%Y%m%d")
     cmd = [
         "yt-dlp",
-        "--flat-playlist",
         "--dump-json",
         "--playlist-end", str(max_videos * 3),  # 多抓一些，之後再篩
+        "--dateafter", dateafter,
         "--no-warnings",
         "--quiet",
         url,
     ]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60, encoding="utf-8"
+            cmd, capture_output=True, text=True, timeout=120, encoding="utf-8"
         )
     except subprocess.TimeoutExpired:
         log(f"  ⚠️  {handle} 取得影片清單逾時")
@@ -96,6 +99,16 @@ def fetch_channel_videos(handle: str, lookback_days: int, max_videos: int) -> li
 
         duration = item.get("duration") or 0  # 秒數
         title = item.get("title") or ""
+
+        # 第二層日期過濾：upload_date 格式為 YYYYMMDD
+        upload_date_str = item.get("upload_date") or ""
+        if upload_date_str:
+            try:
+                upload_date = datetime.strptime(upload_date_str, "%Y%m%d")
+                if upload_date < cutoff:
+                    continue
+            except ValueError:
+                pass
 
         videos.append({
             "video_id": video_id,

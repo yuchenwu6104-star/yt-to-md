@@ -179,6 +179,38 @@ SYSTEM_PROMPT = """\
 6. 使用 > 引用塊呈現講者的重要原話或核心論述"""
 
 
+def _escape_newlines_in_json_strings(s: str) -> str:
+    """Replace literal newlines/tabs inside JSON string values with \\n / \\t.
+
+    MiniMax sometimes returns JSON where the 'article' field contains real
+    newline characters instead of the \\n escape sequence required by the JSON
+    spec. This walks the text char-by-char and fixes those occurrences so
+    json.loads can succeed.
+    """
+    result = []
+    in_string = False
+    escape_next = False
+    for c in s:
+        if escape_next:
+            result.append(c)
+            escape_next = False
+        elif c == "\\" and in_string:
+            result.append(c)
+            escape_next = True
+        elif c == '"':
+            in_string = not in_string
+            result.append(c)
+        elif c == "\n" and in_string:
+            result.append("\\n")
+        elif c == "\r" and in_string:
+            result.append("\\r")
+        elif c == "\t" and in_string:
+            result.append("\\t")
+        else:
+            result.append(c)
+    return "".join(result)
+
+
 def call_minimax(transcript: str, metadata: dict) -> dict:
     """Send transcript to MiniMax and get structured article response."""
     if not MINIMAX_API_KEY:
@@ -243,14 +275,35 @@ def call_minimax(transcript: str, metadata: dict) -> dict:
     try:
         return json.loads(json_text)
     except json.JSONDecodeError:
-        # If JSON parsing fails, return raw text as article
-        print("[warn] MiniMax 回傳非 JSON 格式，使用原始文字", file=sys.stderr)
-        return {
-            "title": metadata.get("title", "YouTube 影片摘要"),
-            "tags": [],
-            "filename_keywords": "影片摘要",
-            "article": raw_text,
-        }
+        pass
+
+    # Strategy 2: MiniMax sometimes returns literal newlines inside JSON strings.
+    # Walk char-by-char and escape them so json.loads can succeed.
+    try:
+        fixed = _escape_newlines_in_json_strings(json_text)
+        return json.loads(fixed)
+    except (json.JSONDecodeError, Exception):
+        pass
+
+    # Strategy 3: missing closing quote on the last string field before '}'
+    # MiniMax sometimes truncates the response and drops the final '"}'
+    try:
+        stripped = json_text.rstrip()
+        if stripped.endswith("}") and not stripped.endswith('"}'):
+            candidate = stripped[:-1].rstrip() + '"}'
+            fixed = _escape_newlines_in_json_strings(candidate)
+            return json.loads(fixed)
+    except (json.JSONDecodeError, Exception):
+        pass
+
+    # Final fallback
+    print("[warn] MiniMax 回傳非 JSON 格式，使用原始文字", file=sys.stderr)
+    return {
+        "title": metadata.get("title", "YouTube 影片摘要"),
+        "tags": [],
+        "filename_keywords": "影片摘要",
+        "article": raw_text,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -279,14 +332,16 @@ def save_article(
     filepath = output_dir / filename
 
     tags_yaml = json.dumps(article_data.get("tags", []), ensure_ascii=False)
+    channel_yaml = metadata.get('channel', 'Unknown').replace('"', '\\"')
+    title_yaml = metadata.get('title', 'Unknown').replace('"', '\\"')
 
     frontmatter = f"""---
 type: yt_article
 date: {today}
 source: YouTube
 youtube_url: {youtube_url}
-channel: "{metadata.get('channel', 'Unknown')}"
-video_title: "{metadata.get('title', 'Unknown')}"
+channel: "{channel_yaml}"
+video_title: "{title_yaml}"
 tags: {tags_yaml}
 ---"""
 
