@@ -26,6 +26,9 @@
     {"name": "Real Vision",               "handle": "@realvision",                      "category": "Macro",   "enabled": false},
     {"name": "Odd Lots",                  "handle": "@BloombergPodcasts",               "category": "Macro",   "enabled": true},
     {"name": "In Good Company",           "handle": "@NorgesBankInvestmentManagement",  "category": "Macro",   "enabled": true},
-    {"name": "Bloomberg Markets",         "handle": "@bloombergtv",                     "category": "Finance", "enabled": false}
+    {"name": "Bloomberg Markets",         "handle": "@bloombergtv",                     "category": "Finance", "enabled": false},
+    {"name": "SemiAnalysis",              "handle": "@SemiAnalysis",                    "category": "AI/Semiconductor", "enabled": true, "dedup_group": "semi"},
+    {"name": "SemiAnalysis Weekly",       "handle": "@SemiAnalysisWeekly",              "category": "AI/Semiconductor", "enabled": true, "dedup_group": "semi"},
+    {"name": "IBM Technology",            "handle": "@IBMTechnology",                   "category": "Tech",             "enabled": true}
   ]
 }

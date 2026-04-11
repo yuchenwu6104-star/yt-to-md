@@ -6,6 +6,7 @@ yt_channel_watcher.py
 """
 
 import json
+import re
 import subprocess
 import sys
 import os
@@ -36,17 +37,30 @@ def load_channels() -> dict:
         return json.load(f)
 
 
-def load_processed() -> set:
+def load_processed() -> dict:
+    """回傳 {"video_ids": set, "titles": set}"""
     if not PROCESSED_FILE.exists():
-        return set()
+        return {"video_ids": set(), "titles": set()}
     with open(PROCESSED_FILE, encoding="utf-8") as f:
         data = json.load(f)
-    return set(data.get("video_ids", []))
+    return {
+        "video_ids": set(data.get("video_ids", [])),
+        "titles": set(data.get("titles", [])),
+    }
 
 
-def save_processed(video_ids: set):
+def save_processed(processed: dict):
     with open(PROCESSED_FILE, "w", encoding="utf-8") as f:
-        json.dump({"video_ids": sorted(video_ids)}, f, indent=2, ensure_ascii=False)
+        json.dump({
+            "video_ids": sorted(processed["video_ids"]),
+            "titles": sorted(processed["titles"]),
+        }, f, indent=2, ensure_ascii=False)
+
+
+def normalize_title(title: str) -> str:
+    """正規化標題用於跨頻道去重：去除空白、標點、轉小寫。"""
+    t = re.sub(r'[\s\-_|｜#＃:：.。,，!！?？\[\]【】()（）]+', '', title)
+    return t.lower()
 
 
 def fetch_channel_videos(handle: str, lookback_days: int, max_videos: int) -> list[dict]:
@@ -153,7 +167,7 @@ def main():
     max_per_channel = settings["max_per_channel"]
 
     processed = load_processed()
-    log(f"已處理影片紀錄：{len(processed)} 部")
+    log(f"已處理影片紀錄：{len(processed['video_ids'])} 部")
 
     total_new = 0
     total_skipped = 0
@@ -172,17 +186,25 @@ def main():
             log(f"  → 無影片或取得失敗")
             continue
 
-        # 篩選長度 + 去重
-        candidates = [
-            v for v in videos
-            if v["duration_seconds"] >= min_duration_sec
-            and v["video_id"] not in processed
-        ][:max_per_channel]
+        # 篩選長度 + video_id 去重 + 標題去重（跨頻道）
+        candidates = []
+        skipped_duration = 0
+        skipped_dup = 0
+        skipped_title_dup = 0
+        for v in videos:
+            if v["duration_seconds"] < min_duration_sec:
+                skipped_duration += 1
+            elif v["video_id"] in processed["video_ids"]:
+                skipped_dup += 1
+            elif normalize_title(v["title"]) in processed["titles"]:
+                skipped_title_dup += 1
+                log(f"  ⏭ 標題重複跳過: {v['title'][:50]}")
+            else:
+                candidates.append(v)
+        candidates = candidates[:max_per_channel]
 
-        skipped_duration = sum(1 for v in videos if v["duration_seconds"] < min_duration_sec)
-        skipped_dup = sum(1 for v in videos if v["video_id"] in processed)
-        log(f"  → 取得 {len(videos)} 部｜長度不足跳過 {skipped_duration}｜已處理跳過 {skipped_dup}｜待處理 {len(candidates)} 部")
-        total_skipped += skipped_dup
+        log(f"  → 取得 {len(videos)} 部｜長度不足 {skipped_duration}｜已處理 {skipped_dup}｜標題重複 {skipped_title_dup}｜待處理 {len(candidates)} 部")
+        total_skipped += skipped_dup + skipped_title_dup
 
         for v in candidates:
             vid = v["video_id"]
@@ -191,7 +213,8 @@ def main():
             log(f"  ▶ [{dur_min}min] {title}")
             success = process_video(vid, title)
             if success:
-                processed.add(vid)
+                processed["video_ids"].add(vid)
+                processed["titles"].add(normalize_title(v["title"]))
                 save_processed(processed)
                 log(f"    ✓ 完成")
                 total_new += 1
