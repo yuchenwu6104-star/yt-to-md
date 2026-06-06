@@ -1,6 +1,6 @@
 {
   "settings": {
-    "min_duration_minutes": 15,
+    "min_duration_minutes": 12,
     "lookback_days": 30,
     "max_per_channel": 5
   },
@@ -29,6 +29,36 @@
     {"name": "Bloomberg Markets",         "handle": "@bloombergtv",                     "category": "Finance", "enabled": false},
     {"name": "SemiAnalysis",              "handle": "@SemiAnalysis",                    "category": "AI/Semiconductor", "enabled": true, "dedup_group": "semi"},
     {"name": "SemiAnalysis Weekly",       "handle": "@SemiAnalysisWeekly",              "category": "AI/Semiconductor", "enabled": true, "dedup_group": "semi"},
-    {"name": "IBM Technology",            "handle": "@IBMTechnology",                   "category": "Tech",             "enabled": true}
+    {"name": "IBM Technology",            "handle": "@IBMTechnology",                   "category": "Tech",             "enabled": true},
+    {"name": "The Intrinsic Value",      "handle": "@TheIntrinsicValuePodcast",         "category": "VC",               "enabled": true},
+    {"name": "Top Traders Unplugged",    "handle": "@TopTradersUnplugged",              "category": "Macro",            "enabled": true},
+    {"name": "Behind the Balance Sheet", "handle": "@BehindtheBalanceSheet",            "category": "Finance",          "enabled": true},
+    {"name": "Sequoia Capital",          "handle": "@sequoiacapital",                   "category": "VC",               "enabled": true},
+    {"name": "TWIML AI Podcast",         "handle": "@twimlai",                          "category": "AI",               "enabled": true},
+    {"name": "EconTalk",                 "handle": "@econtalkwithruss",                 "category": "Macro",            "enabled": true},
+    {"name": "My First Million",         "handle": "@MyFirstMillionPod",                "category": "VC",               "enabled": true},
+    {"name": "Lenny's Podcast",          "handle": "@LennysPodcast",                    "category": "Tech",             "enabled": true},
+    {"name": "The Pragmatic Engineer",   "handle": "@pragmaticengineer",                "category": "Tech",             "enabled": true},
+    {"name": "Hard Fork",                "handle": "@hardfork",                         "category": "Tech",             "enabled": true},
+    {"name": "Latent Space",             "handle": "@LatentSpacePod",                   "category": "AI",               "enabled": true},
+    {"name": "NVIDIA",                   "handle": "@NVIDIA",                           "category": "AI/Semiconductor", "enabled": true},
+    {"name": "Eye on AI",                "handle": "@eyeonai3425",                      "category": "AI",               "enabled": true},
+    {"name": "Last Week in AI",          "handle": "@lastweekinai",                     "category": "AI",               "enabled": true},
+    {"name": "TechTechPotato",           "handle": "@TechTechPotato",                   "category": "AI/Semiconductor", "enabled": true},
+    {"name": "Macro Musings",            "handle": "@MacroMusingsDavidBeckworth",       "category": "Macro",            "enabled": true},
+    {"name": "We Study Billionaires",    "handle": "@TheInvestorsPodcastShow",          "category": "Finance",          "enabled": true},
+    {"name": "Asianometry",              "handle": "@Asianometry",                      "category": "AI/Semiconductor", "enabled": true},
+    {"name": "Forward Guidance",         "handle": "@ForwardGuidanceBW",                "category": "Macro",            "enabled": true},
+    {"name": "The Knowledge Project",    "handle": "@tkppodcast",                       "category": "VC",               "enabled": true},
+    {"name": "Oaktree Capital",          "handle": "@oaktreecapital",                   "category": "Finance",          "enabled": true},
+    {"name": "Nikhil Kamath",            "handle": "@nikhil.kamath",                    "category": "VC",               "enabled": true},
+    {"name": "Big Technology",           "handle": "@Alex.kantrowitz",                  "category": "Tech",             "enabled": true},
+    {"name": "Machine Learning Street Talk", "handle": "@MachineLearningStreetTalk",   "category": "AI",               "enabled": true},
+    {"name": "Chip Stock Investor",    "handle": "@chipstockinvestor",                 "category": "AI/Semiconductor", "enabled": true},
+    {"name": "PRO ROBOTS",             "handle": "@PROROBOTS",                         "category": "Tech",             "enabled": true},
+    {"name": "TBPN",                   "handle": "@TBPNLive",                          "category": "Tech",             "enabled": true},
+    {"name": "Masters of Scale",       "handle": "@MastersofScale_",                   "category": "VC",               "enabled": true},
+    {"name": "Making Billions",        "handle": "@MakingBillionswithRyanMiller",      "category": "Finance",          "enabled": true},
+    {"name": "Business History",       "handle": "@BusinessHistoryPod",                "category": "Finance",          "enabled": true}
   ]
 }
