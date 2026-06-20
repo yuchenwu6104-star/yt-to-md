@@ -5,7 +5,7 @@ description: "將 YouTube 影片轉為深度洞察文章。當用戶貼上 YouTu
 
 # /yt — YouTube 影片轉深度洞察文章
 
-將 YouTube 影片的字幕內容，透過 MiniMax M2.7 API 轉化為一篇有故事性、有分析觀點的繁體中文深度文章，並自動存入 Obsidian vault。
+將 YouTube 影片的字幕內容，透過 MiniMax M3 API 轉化為一篇有故事性、有分析觀點的繁體中文深度文章，並自動存入 Obsidian vault。
 
 ## 使用方式
 
@@ -29,7 +29,7 @@ python "<skill-path>/scripts/yt_to_article.py" "<YouTube URL>"
 1. 解析 URL 提取 video_id
 2. 用 `youtube-transcript-api` 抓取字幕（優先：zh-TW → zh → en → 任何可用）
 3. 用 `yt-dlp --dump-json` 取得影片 metadata（標題、頻道、日期）
-4. 將字幕 + metadata 送入 MiniMax M2.7 API，生成結構化的深度洞察文章
+4. 將字幕 + metadata 送入 MiniMax M3 API，生成結構化的深度洞察文章
 5. 格式化為 markdown（含 YAML frontmatter）並存入 Obsidian vault
 
 ### Step 2: 確認結果

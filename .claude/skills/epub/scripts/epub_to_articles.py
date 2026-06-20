@@ -1,6 +1,6 @@
 """epub_to_articles.py
 
-將 epub 電子書拆解為章節，透過 MiniMax M2.7 API 生成：
+將 epub 電子書拆解為章節，透過 MiniMax M3 API 生成：
   1. 子彈式重點筆記（_bullets.md）
   2. 深度洞察文章（_article.md）
 
@@ -47,7 +47,7 @@ if not os.getenv("ANTHROPIC_API_KEY") and _ENV_FILE.exists():
 
 MINIMAX_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimax.io/anthropic")
 MINIMAX_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-MINIMAX_MODEL = "MiniMax-M2.7"
+MINIMAX_MODEL = "MiniMax-M3"
 
 OUTPUT_BASE = Path(
     r"C:\Users\wukee\OneDrive\文件\Obsidian Vault\投資筆記\書籍"
@@ -233,6 +233,7 @@ def summarize_segment(segment: str, book_title: str, chapter_title: str,
             },
             json={
                 "model": MINIMAX_MODEL,
+                "thinking": {"type": "disabled"},
                 "max_tokens": 4096,
                 "system": SEGMENT_SUMMARY_SYSTEM,
                 "messages": [{"role": "user", "content": user_prompt}],
@@ -372,6 +373,7 @@ def call_minimax(content: str, book_title: str, chapter_title: str, mode: str) -
             },
             json={
                 "model": MINIMAX_MODEL,
+                "thinking": {"type": "disabled"},
                 "max_tokens": 8192,
                 "system": system,
                 "messages": [{"role": "user", "content": user_prompt}],

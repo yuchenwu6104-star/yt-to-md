@@ -12,3 +12,12 @@ __pycache__/
 
 # 測試用暫存
 .claude/skills/invest/scripts/test_memo.md
+
+# Whisper / 生成暫存輸出（debug 用，不 commit）
+_whisper_*.txt
+_tmp_yt_whisper.py
+_gen_*.log
+
+# 本地 scratch / 鏡像（衍生自已追蹤的 skill，不 commit）
+.agents/
+_m3_test/

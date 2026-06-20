@@ -140,7 +140,7 @@ def process_video(video_id: str, title: str) -> bool:
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
+            cmd, capture_output=True, text=True, timeout=900,
             encoding="utf-8", env=env
         )
         if result.returncode == 0:
@@ -149,7 +149,7 @@ def process_video(video_id: str, title: str) -> bool:
             log(f"    ✗ 生成失敗: {result.stderr[-300:].strip()}")
             return False
     except subprocess.TimeoutExpired:
-        log(f"    ✗ 逾時（300s）")
+        log(f"    ✗ 逾時（900s）")
         return False
     except Exception as e:
         log(f"    ✗ 例外: {e}")

@@ -1,6 +1,6 @@
 # yt-to-md — YouTube 訪談轉深度洞察文章
 
-將 YouTube 影片字幕透過 MiniMax M2.7（或任何 Anthropic 相容 API）轉換為繁體中文深度分析文章，並自動落檔至 Obsidian vault。支援每日自動輪巡多個頻道、Facebook 貼文改寫、ePub 電子書摘要、投資備忘錄分析。
+將 YouTube 影片字幕透過 MiniMax M3（或任何 Anthropic 相容 API）轉換為繁體中文深度分析文章，並自動落檔至 Obsidian vault。支援每日自動輪巡多個頻道、Facebook 貼文改寫、ePub 電子書摘要、投資備忘錄分析。
 
 ---
 

@@ -5,7 +5,7 @@ description: "將 epub 電子書拆解為章節，透過 MiniMax 生成子彈筆
 
 # /epub — ePub 電子書拆章濃縮至 Obsidian
 
-將 epub 電子書依目錄結構拆解成章節，每章透過 MiniMax M2.7 API 生成兩種知識濃縮文件，落檔至 Obsidian 書籍目錄。
+將 epub 電子書依目錄結構拆解成章節，每章透過 MiniMax M3 API 生成兩種知識濃縮文件，落檔至 Obsidian 書籍目錄。
 
 ## 使用方式
 

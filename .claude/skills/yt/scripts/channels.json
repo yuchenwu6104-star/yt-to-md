@@ -59,6 +59,7 @@
     {"name": "TBPN",                   "handle": "@TBPNLive",                          "category": "Tech",             "enabled": true},
     {"name": "Masters of Scale",       "handle": "@MastersofScale_",                   "category": "VC",               "enabled": true},
     {"name": "Making Billions",        "handle": "@MakingBillionswithRyanMiller",      "category": "Finance",          "enabled": true},
-    {"name": "Business History",       "handle": "@BusinessHistoryPod",                "category": "Finance",          "enabled": true}
+    {"name": "Business History",       "handle": "@BusinessHistoryPod",                "category": "Finance",          "enabled": true},
+    {"name": "Trader Talks Webcasts",  "handle": "@tradertalkswebcasts",               "category": "Finance",          "enabled": true}
   ]
 }

@@ -42,7 +42,7 @@ if not os.getenv("ANTHROPIC_API_KEY") and _ENV_FILE.exists():
 
 MINIMAX_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimax.io/anthropic")
 MINIMAX_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-MINIMAX_MODEL = "MiniMax-M2.7"
+MINIMAX_MODEL = "MiniMax-M3"
 
 # ---------------------------------------------------------------------------
 # Facebook 格式說明與 few-shot 樣板
@@ -165,6 +165,7 @@ def call_minimax(body: str, frontmatter: dict) -> str:
             },
             json={
                 "model": MINIMAX_MODEL,
+                "thinking": {"type": "disabled"},
                 "max_tokens": 4096,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": user_prompt}],

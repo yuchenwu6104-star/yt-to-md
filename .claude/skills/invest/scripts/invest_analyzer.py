@@ -1,6 +1,6 @@
 """invest_analyzer.py
 
-分析投資備忘錄或文章，透過 MiniMax M2.7 進行七維度評估並給出投資評級。
+分析投資備忘錄或文章，透過 MiniMax M3 進行七維度評估並給出投資評級。
 支援輸入：MD/TXT 文字檔、PDF、網址
 輸出：直接顯示於終端機
 """
@@ -43,7 +43,7 @@ if not os.getenv("ANTHROPIC_API_KEY") and _ENV_FILE.exists():
 
 MINIMAX_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimax.io/anthropic")
 MINIMAX_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-MINIMAX_MODEL = "MiniMax-M2.7"
+MINIMAX_MODEL = "MiniMax-M3"
 MAX_CONTENT_CHARS = 30_000
 
 # ---------------------------------------------------------------------------
@@ -174,6 +174,7 @@ def analyze_investment(content: str, source_desc: str) -> dict:
                 },
                 json={
                     "model": MINIMAX_MODEL,
+                    "thinking": {"type": "disabled"},
                     "max_tokens": 4096,
                     "system": SYSTEM_PROMPT,
                     "messages": [{"role": "user", "content": user_prompt}],
@@ -332,7 +333,7 @@ def append_to_file(filepath: str, data: dict) -> None:
 ### 論點失效觸發點
 {triggers_md}
 
-> *AI 分析由 MiniMax M2.7 生成，僅供參考。*
+> *AI 分析由 MiniMax M3 生成，僅供參考。*
 """
     with open(filepath, "a", encoding="utf-8") as f:
         f.write(block)

@@ -33,13 +33,18 @@ def _enable_cuda_dlls():
 
 
 def _download_audio(url: str, dest_base: str) -> str:
+    audio_path = dest_base + ".mp3"
+    # A stale file from an interrupted run makes yt-dlp skip the download and
+    # the wrong audio gets transcribed — always start clean.
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
     out_tmpl = dest_base + ".%(ext)s"
     subprocess.run(
         ["yt-dlp", "-f", "bestaudio", "-x", "--audio-format", "mp3",
-         "--audio-quality", "5", "-o", out_tmpl, url],
+         "--audio-quality", "5", "--force-overwrites", "-o", out_tmpl, url],
         check=True,
     )
-    return dest_base + ".mp3"
+    return audio_path
 
 
 def transcribe(audio_path: str, lang: str | None, model_name: str) -> tuple[str, str]:

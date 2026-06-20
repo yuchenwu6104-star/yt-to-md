@@ -33,7 +33,7 @@ python "<skill-path>/scripts/invest_analyzer.py" "<路徑或URL>"
 腳本會自動：
 1. 判斷輸入類型（URL / PDF / 文字檔）
 2. 萃取文字內容
-3. 送入 MiniMax M2.7 進行七維度分析
+3. 送入 MiniMax M3 進行七維度分析
 4. 格式化輸出至終端機
 
 ### Step 2: 解讀結果

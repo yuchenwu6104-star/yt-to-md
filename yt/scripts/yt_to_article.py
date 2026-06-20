@@ -1,6 +1,6 @@
 """YouTube 影片 → 深度洞察文章
 
-抓取 YouTube 字幕，透過 MiniMax M2.7 API 生成繁體中文深度分析文章，
+抓取 YouTube 字幕，透過 MiniMax M3 API 生成繁體中文深度分析文章，
 落檔至 Obsidian vault。
 """
 
@@ -73,7 +73,7 @@ if not os.getenv("ANTHROPIC_API_KEY") and _ENV_FILE.exists():
 
 MINIMAX_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimax.io/anthropic")
 MINIMAX_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-MINIMAX_MODEL = "MiniMax-M2.7"
+MINIMAX_MODEL = "MiniMax-M3"
 
 OUTPUT_DIR = Path(
     r"C:\Users\wukee\OneDrive\文件\Obsidian Vault\投資筆記\每週總結\每日研究"
@@ -350,29 +350,64 @@ SYSTEM_PROMPT = """\
 4. **引述的翻譯要自然**：講者的原話翻成中文後，要讀起來像一個中文母語者在說話，不是像在讀翻譯稿。可以適度調整語序和用詞，但不能改變原意。
 5. **專有名詞保留英文**：人名、公司名、技術術語保留英文原名，不要音譯。這條規則優先於翻譯規則——寧可在中文句子裡夾帶英文專有名詞，也不要創造讀者看不懂的音譯。
 
+
+
+⛔ **最高優先級格式鐵則（凌駕「保留原話」原則）**：
+1. 所有講者引述一律翻成自然繁體中文，用「」框住。**即使為了保留原意，也嚴禁輸出任何英文整句**；「」內只能是中文（人名、公司名、技術術語等專有名詞除外）。
+2. **嚴禁使用 `>` markdown 引用塊**呈現講者原話。講者原話只能用「」。`>` 僅保留給極少數編者摘要。
+3. 若原話是英文，先在腦中翻成中文再寫進「」，不要先貼英文原句。
+
 ## 輸出 JSON 格式（不要輸出任何其他內容）
 
 {
   "title": "文章標題（論點導向，不超過30字，例如：Hassabis：AGI 五年內實現的可能性非常高）",
   "tags": ["標籤1", "標籤2", "標籤3"],
   "filename_keywords": "2到3個關鍵字用底線連接，例如：AGI_DeepMind_運算力",
+  "topics": ["主題段落1", "主題段落2", "..."],
   "article": "完整的 markdown 文章內容（不包含標題，從導言開始）"
 }
 
 ## 文章結構要求
+
+### 主題盤點（寫 article 之前先填 topics 欄位）
+- 動筆寫文章之前，先盤點這部影片談了哪些主題段落，列進 topics：影片資訊有章節標記時直接以章節為基準（瑣碎章節可合併），沒有章節就通讀逐字稿自行歸納
+- article 正文必須讓 topics 裡的每個主題至少有一個對應段落。不可以挑幾個主題寫、其他略過
+- 次要主題可以合併成一段簡短處理，但不能整個消失
 
 ### 導言（1-2 段）
 - 第一段：介紹講者/受訪者是誰——身份、職位、代表性成就。讓讀者知道「這個人是誰、為什麼該聽他說話」。
 - 第二段：用 1-3 句話說明這個影片的核心問題或投資啟示，直接切入主題。
 
 ### 正文（6-15 個 ## 小標題段落）
-- 小標題必須是「論點式」，直接點出該段的核心觀點（例如：`## Scaling Laws 尚未觸頂`、`## 運算力仍是最大瓶頸`），不要用文學式標題（例如：`## 一場沒有將軍的圍棋`）
-- 每段結構：簡短串接（「Peter 說：」「程凱補充：」即可）→ 講者原話（大段引述）→ 如有必要再補 1 句脈絡
-- **引述比例必須達到 60-70%**：每段的主體是講者的直接引述，用「」框住。AI 的角色只是在段落之間提供最少的串接和背景補充
+
+小標題必須是「論點式」，直接點出該段的核心觀點（例如：`## Scaling Laws 尚未觸頂`、`## 運算力仍是最大瓶頸`），不要用文學式標題（例如：`## 一場沒有將軍的圍棋`）。段落核心若有具體數字（目標價、漲幅、估值），把數字放進小標題，數字比形容詞更有力。
+
+每段基本結構：串接句 → 講者原話（大段引述）→ 如有必要再補 1 句脈絡。
+
+**選材原則（文章精不精彩，九成取決於你選了哪些原話）：**
+- **引述比例必須達到 60-70%**：每段的主體是講者的直接引述，用「」框住
+- 同一個論點，講者有平淡的說法也有生動的說法時，引生動的那段。講者的比喻、具體故事、反問、俏皮話是原文的一部分，必須收進來，不是可刪的裝飾
+- 訪談中的關鍵問答保留一來一往的形式：主持人問：「……」來賓答：「……」。不要把對話壓成單人陳述，訪談的張力常在問答之間
 - 引述要盡量完整，不要把講者一段完整的論述拆成碎片或用自己的話重新包裝
-- 如果講者對同一主題有多段發言，依序完整呈現，中間用簡短串接語連接
-- **禁止在引述前加描述性過渡句**，例如「他把話說得很直接」「她用一個生動的比喻說明」「Peter 強調」「Clark 特別指出」。直接寫「Peter 說：」或讓引述自然接上前文即可
-- **引述動詞只能用中性詞**：引述前的動詞只准用「說、表示、指出、提到、認為、補充、回答、問」這幾個。**嚴禁使用帶評價或形容語氣的引述動詞**，包括但不限於：坦言、坦承、坦率地說、講得很坦白、直言、更直接地說、講得更白、一針見血、透露、爆料、強調、不諱言、語重心長地說、意味深長地說。這些動詞等於先替講者的話打分，再讓讀者看引述，會擋在讀者和原話之間。讓引述自己說話。
+- 講者對同一主題有多段發言，依序完整呈現，中間用簡短串接語連接
+
+**串接原則（你自己寫的句子只能載「事實」，不能載「演出」）：**
+- 串接句的正當功能是「事實性鋪陳」：交代背景、點出這段話在回應什麼問題、補上對照數字。有資訊量的串接讓引述之間有敘事連貫，應該寫
+  - ✅「主持人接著問到點陣圖可能的變化。她回答：」
+  - ✅「三月的點陣圖還顯示今年降息一碼，他的判斷不同。他說：」
+  - ✅ 最簡形式「Peter 說：」「程凱補充：」永遠可用
+- **禁止在引述前加描述性過渡句或語氣評價**，例如「他把話說得很直接」「她用一個生動的比喻說明」「Peter 強調」「Clark 特別指出」。串接句不可以替講者的話打分、形容語氣、預告精彩度
+- **禁止「舞台指示／旁白」式串接（最常犯，務必根除）**：不要描寫對話的動作、節奏、戲劇性，或你自己的導演視角。鬥嘴段最容易犯，因為沒有事實可補，模型就改去報幕。以下這類一律禁止：
+  - ❌ 描寫語氣／動作：「Ian 笑著接：」「Ian 順著接：」「Tobias 馬上搭腔：」「Tobias 馬上吐槽：」「Tobias 再補一刀：」「Tobias 馬上接梗：」「Ian 苦笑：」
+  - ❌ 戲劇性／畫面感：「Ian 補了最後一刀：」「Ian 補了一個畫面：」「Tobias 補了一個細節：」
+  - ❌ 描寫對話走位：「Ian 接著把方向拉回科技業：」「Ian 又把梗接到 F1：」
+  - ❌ 替講者的表達打分：「Tobias 把數字講得更具體：」「Tobias 幫忙把這句話講得更直白：」
+  - 判準：把串接句遮起來只看引號內的話，笑點和張力還在嗎？在，那旁白就是多餘的。鬥嘴的喜感住在引號裡，不是旁白裡。
+- **引述動詞只能用中性詞**：引述前的動詞只准用「說、表示、指出、提到、認為、補充、回答、問、接著說」這幾個。**嚴禁使用帶評價、形容語氣或描寫動作的引述動詞**，包括但不限於：坦言、坦承、坦率地說、講得很坦白、直言、更直接地說、講得更白、一針見血、透露、爆料、強調、不諱言、語重心長地說、意味深長地說、笑著接、順著接、馬上搭腔、馬上吐槽、再補一刀、補了最後一刀、補了一個畫面、把數字講得更具體、把這句話講得更直白、把方向拉回、開玩笑、笑說、打趣、話鋒一轉、切入核心。這些動詞等於先替講者的話打分或替畫面加戲，再讓讀者看引述，會擋在讀者和原話之間。讓引述自己說話。
+- **快速來回的鬥嘴用「對話直述模式」**：當一段是純粹你來我往、沒有事實脈絡可補時，不要硬塞串接句，改用最簡並列讓兩句話自己對撞：
+  - ❌（加戲）`Ian 笑著接：「我想說全是 SAP HANA。」Tobias 馬上搭腔：「我本來也要說俄羅斯人和 SAP HANA。」`
+  - ✅（直述）`Ian 說：「我想說全是 SAP HANA。」Tobias 接著說：「我本來也要說俄羅斯人和 SAP HANA。」`
+  - 同一段密集對話時，連「說」都可省的更乾淨形式：`Ian：「……」Tobias：「……」`
 - **禁止形容講者的問題或觀點**：不要寫「他丟出一個很尖的問題」「這是一個饒有深意的觀點」「他描述了一個令人不寒而慄的場景」這類評價。直接寫「他問：」「他的觀點是：」「他舉了一個例子：」
 
 ### 結語（1 段）
@@ -385,6 +420,7 @@ SYSTEM_PROMPT = """\
 - 講者原話用「」呈現，不使用 > 引用塊（引用塊保留給編者評論或特別重要的一句話摘要）
 
 ### 風格禁忌（非常重要，每一條都必須遵守）
+以下禁令管的是你自己寫的文字（導言、串接句、小標題、結語）。講者原話裡出現這些詞照譯，不要替講者降溫。
 - 不要大量使用破折號（——），改用逗號或句號
 - 不要用誇大形容詞：「前所未有的」「令人震驚的」「天壤之別」「至關重要」「開創性的」「驚人的」一律禁用
 - 不要用三段式列舉（A、B、C 三項並列），改為兩項或四項
@@ -499,8 +535,73 @@ def _extract_fields_by_regex(text: str) -> dict | None:
     return None
 
 
+def _strip_model_artifacts(text: str) -> str:
+    """Remove model artifacts that can leak into the article via the regex
+    extraction fallback: <think>/<thinking> blocks and stray fragments before
+    the first heading when an unclosed think tag swallows the prefix."""
+    text = re.sub(
+        r"<think(?:ing)?>.*?</think(?:ing)?>\s*", "", text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    m = re.search(r"<think(?:ing)?>", text, re.IGNORECASE)
+    if m:
+        # Unclosed think tag: drop from the tag to the first markdown heading
+        rest = text[m.start():]
+        h = re.search(r"(?m)^#{1,6} ", rest)
+        text = text[:m.start()] + (rest[h.start():] if h else "")
+    return text.strip()
+
+
+def _ascii_letter_ratio(s: str) -> float:
+    letters = sum(1 for c in s if c.isascii() and c.isalpha())
+    return letters / max(len(s), 1)
+
+
+def format_violations(article: str) -> list:
+    """Check a generated article against the SYSTEM_PROMPT 格式鐵則.
+
+    Returns human-readable violation descriptions (empty list = pass).
+    Mirrors the checks previously only run in _m3_test/ab_test_v3.py.
+    """
+    issues = []
+    # An offending quote is English-majority AND contains a run of 4+
+    # space-separated English words (i.e. an English clause, not a list of
+    # proper nouns like 「Sam、Dario、Demis」 or a term like 「vibe coding」).
+    eng_clause = re.compile(r"(?:[A-Za-z][A-Za-z'.,]*\s+){3,}[A-Za-z]")
+    eng_quotes = [
+        q for q in re.findall(r"「([^「」]{10,})」", article)
+        if _ascii_letter_ratio(q) > 0.5 and eng_clause.search(q)
+    ]
+    if len(eng_quotes) >= 3:
+        issues.append(
+            f"{len(eng_quotes)} 段「」引述以英文為主（鐵則 1：引述必須翻成中文），"
+            f"例如：「{eng_quotes[0][:40]}...」"
+        )
+    blockquotes = re.findall(r"(?m)^>\s", article)
+    if len(blockquotes) > 3:
+        issues.append(f"{len(blockquotes)} 行 > 引用塊（鐵則 2：講者原話只能用「」）")
+    if re.search(r"[А-Яа-я]", article):
+        issues.append("文章含西里爾字母（模型輸出異常）")
+    if re.search(r"<think(?:ing)?>", article, re.IGNORECASE):
+        issues.append("文章含 <think> 思考區塊殘留")
+    if re.search(r'"(?:title|article|tags)"\s*:\s*["\[]', article):
+        issues.append("文章含原始 JSON 殘留")
+    from collections import Counter
+    paras = Counter(
+        p.strip() for p in article.split("\n\n") if len(p.strip()) >= 80
+    )
+    dupes = sum(1 for c in paras.values() if c > 1)
+    if dupes:
+        issues.append(f"{dupes} 個長段落重複出現（疑似內容拼接異常）")
+    return issues
+
+
 def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
-    """Send transcript to MiniMax and get structured article response.
+    """Generate an article from a transcript, enforcing the format gate.
+
+    Calls MiniMax once, runs format_violations() on the result; on failure,
+    retries once with the violation list appended to the prompt, then keeps
+    whichever attempt has fewer violations.
 
     Args:
         part_info: If non-empty, appended to the user prompt to guide split handling.
@@ -538,6 +639,32 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
 
 請用 JSON 格式輸出（嚴格遵守 system prompt 中的格式要求）。"""
 
+    result = _request_article(user_prompt, metadata)
+    result["article"] = _strip_model_artifacts(result.get("article", ""))
+    issues = format_violations(result.get("article", ""))
+    if not issues:
+        return result
+
+    print(f"[warn] 格式鐵則未通過：{'；'.join(issues)}", file=sys.stderr)
+    print("[warn] 附上違規說明重新生成一次...", file=sys.stderr)
+    retry_prompt = user_prompt + (
+        "\n\n⚠️ 你上一次的輸出違反了格式鐵則：" + "；".join(issues) + "。"
+        "請重新輸出完整 JSON：所有講者引述必須先翻成自然繁體中文再放進「」，"
+        "嚴禁任何英文整句，嚴禁 > 引用塊。"
+    )
+    retry = _request_article(retry_prompt, metadata)
+    retry["article"] = _strip_model_artifacts(retry.get("article", ""))
+    retry_issues = format_violations(retry.get("article", ""))
+    if retry_issues:
+        print(
+            f"[warn] 重試後仍未完全通過：{'；'.join(retry_issues)}（保留違規較少的一版）",
+            file=sys.stderr,
+        )
+    return retry if len(retry_issues) <= len(issues) else result
+
+
+def _request_article(user_prompt: str, metadata: dict) -> dict:
+    """Single MiniMax API call + JSON parsing (no format gate)."""
     import time as _time
 
     max_retries = 3
@@ -553,6 +680,7 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
                     },
                     json={
                         "model": MINIMAX_MODEL,
+                        "thinking": {"type": "disabled"},
                         "max_tokens": 16384,
                         "system": SYSTEM_PROMPT,
                         "messages": [{"role": "user", "content": user_prompt}],
