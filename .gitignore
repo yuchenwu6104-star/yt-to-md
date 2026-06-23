@@ -13,6 +13,9 @@ __pycache__/
 # 金鑰（含 HACKMD_API_TOKEN 等；用 .env.example 當範本）
 .env
 
+# yt 主流程未設 YT_OUTPUT_DIR 時的預設落檔目錄
+output/
+
 # 測試用暫存
 .claude/skills/invest/scripts/test_memo.md
 

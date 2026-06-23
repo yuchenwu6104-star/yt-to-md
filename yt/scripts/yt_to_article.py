@@ -54,18 +54,35 @@ def _add_pangu_spacing(text: str) -> str:
     return "\n".join(result)
 
 # ---------------------------------------------------------------------------
-# Load .env if env vars not already set
+# Load .env（repo 根優先；舊機器路徑為相容回退，Mac 上不存在即略過）
 # ---------------------------------------------------------------------------
 
-_ENV_FILE = Path(
-    r"C:\Users\wukee\OneDrive\文件\clon資料\taiwan_stock_dashboard\美股資料\.env"
-)
-if not os.getenv("ANTHROPIC_API_KEY") and _ENV_FILE.exists():
-    for line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
+
+def _load_env_file(path: Path) -> None:
+    """讀 .env 進 os.environ（setdefault，不覆蓋既有環境變數）。"""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, _, val = line.partition("=")
             os.environ.setdefault(key.strip(), val.strip())
+
+
+def _find_repo_root() -> Path:
+    """從本檔往上找 repo 根（遇 .git 或 .env 為止），找不到回退檔案所在目錄。"""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / ".env").exists() or (parent / ".git").exists():
+            return parent
+    return Path(__file__).resolve().parent
+
+
+_REPO_ROOT = _find_repo_root()
+_load_env_file(_REPO_ROOT / ".env")
+# 舊機器相容回退：原本綁死讀的 taiwan_stock_dashboard .env
+_load_env_file(
+    Path(r"C:\Users\wukee\OneDrive\文件\clon資料\taiwan_stock_dashboard\美股資料\.env")
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -73,11 +90,11 @@ if not os.getenv("ANTHROPIC_API_KEY") and _ENV_FILE.exists():
 
 MINIMAX_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimax.io/anthropic")
 MINIMAX_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-MINIMAX_MODEL = "MiniMax-M3"
+MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M3")
 
-OUTPUT_DIR = Path(
-    r"C:\Users\wukee\OneDrive\文件\Obsidian Vault\投資筆記\每週總結\每日研究"
-)
+# 落檔位置：YT_OUTPUT_DIR 優先，未設則回退 <repo>/output/
+OUTPUT_DIR = Path(os.getenv("YT_OUTPUT_DIR") or (_REPO_ROOT / "output"))
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Max transcript characters per MiniMax call
 MAX_TRANSCRIPT_CHARS = 60_000
