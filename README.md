@@ -11,6 +11,8 @@
 | `yt_to_article.py` | 單支影片 URL → 深度洞察文章（Markdown） |
 | `yt_channel_watcher.py` | 每日自動輪巡頻道，批次處理新影片 |
 | `md_to_fb.py` | 深度文章 → Facebook 貼文格式 |
+| `humanizer-zh`（技能） | 去除文章 AI 寫作痕跡、翻譯校正，跑完自動上傳 HackMD |
+| `upload_hackmd.py` | 任一 Markdown → HackMD（回傳可分享網址） |
 
 ---
 
@@ -30,15 +32,21 @@ pip install youtube-transcript-api yt-dlp httpx
 
 ### 1. 環境變數
 
-建立 `.env` 檔案（或直接設定環境變數）：
+複製 `.env.example` 成 `.env` 後填值（`.env` 已被 `.gitignore` 忽略，不進版控）：
+
+```bash
+cp .env.example .env
+```
 
 ```env
 ANTHROPIC_API_KEY=sk-cp-xxxxxxxxxxxxxxxx
 ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic
+HACKMD_API_TOKEN=            # 選填，要自動上傳 HackMD 才需要
 ```
 
 - **MiniMax**：API key 格式為 `sk-cp-...`，Base URL 為 `https://api.minimax.io/anthropic`
 - **其他 Anthropic 相容 API**：替換對應的 key 與 base URL 即可
+- **HackMD**：token 去 HackMD → Settings → API & Webhooks 產生；`upload_hackmd.py` 會先讀 repo 根 `.env`，找不到再回退 `~/.claude/.env`
 
 ### 2. 修改輸出路徑
 
@@ -92,6 +100,16 @@ python yt_channel_watcher.py
 ```bash
 python md_to_fb.py "path/to/article.md"
 ```
+
+### humanizer 編修 + HackMD 上傳
+
+`humanizer-zh` 技能（`.claude/skills/humanizer-zh/`）在 Claude Code 內以 `/humanizer-zh <檔案>` 觸發，去除文章的 AI 寫作痕跡並比對英文字幕校正翻譯，跑完會自動上傳 HackMD。也可單獨上傳任一 Markdown：
+
+```bash
+python .claude/skills/humanizer-zh/scripts/upload_hackmd.py "path/to/article.md" --tags "YT訪談摘錄"
+```
+
+需先在 `.env`（或 `~/.claude/.env`）填好 `HACKMD_API_TOKEN`。預設上傳到個人空間、`readPermission=guest`（有連結即可看），印出可分享網址。
 
 ---
 

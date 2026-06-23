@@ -10,6 +10,9 @@ __pycache__/
 # 本地設定
 .claude/settings.local.json
 
+# 金鑰（含 HACKMD_API_TOKEN 等；用 .env.example 當範本）
+.env
+
 # 測試用暫存
 .claude/skills/invest/scripts/test_memo.md
 
