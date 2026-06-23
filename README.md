@@ -10,6 +10,7 @@
 |------|------|
 | `yt_to_article.py` | 單支影片 URL → 深度洞察文章（Markdown） |
 | `yt_channel_watcher.py` | 每日自動輪巡頻道，批次處理新影片 |
+| `transcribe.py` | 無字幕影片本地轉錄（Windows CUDA / Mac MLX / CPU 自動切換） |
 | `md_to_fb.py` | 深度文章 → Facebook 貼文格式 |
 | `humanizer-zh`（技能） | 去除文章 AI 寫作痕跡、翻譯校正，跑完自動上傳 HackMD |
 | `upload_hackmd.py` | 任一 Markdown → HackMD（回傳可分享網址） |
@@ -110,6 +111,24 @@ python .claude/skills/humanizer-zh/scripts/upload_hackmd.py "path/to/article.md"
 ```
 
 需先在 `.env`（或 `~/.claude/.env`）填好 `HACKMD_API_TOKEN`。預設上傳到個人空間、`readPermission=guest`（有連結即可看），印出可分享網址。
+
+### 無字幕影片：本地轉錄
+
+影片沒有可用字幕時，用 `transcribe.py` 在本地跑 Whisper large-v3-turbo：
+
+```bash
+python .claude/skills/yt/scripts/transcribe.py "<YouTube URL>" --out transcript.txt
+```
+
+後端由 `WHISPER_DEVICE`（或 `--device`）決定，預設 `auto`：
+
+| 平台 | `auto` 選用 | 需安裝 |
+|------|------------|--------|
+| Windows + NVIDIA | `cuda`（faster-whisper int8） | `faster-whisper` + `nvidia-cublas-cu12` / `nvidia-cudnn-cu12` / `nvidia-cuda-runtime-cu12` |
+| Mac（Apple Silicon） | `mlx`（跑 Mac 晶片） | `pip install mlx-whisper`（首次轉錄會自 HuggingFace 下載模型） |
+| 其他 / 無 GPU | `cpu`（慢，退路） | `faster-whisper` |
+
+轉出的字幕為簡體，交給 `/humanizer-zh` 時會一併簡轉繁。
 
 ---
 
