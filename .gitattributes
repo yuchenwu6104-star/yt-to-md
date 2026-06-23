@@ -1,0 +1,4 @@
+# 跨平台換行：shell 腳本一律 LF（否則 Mac/Linux 執行會出現 bad interpreter ^M）
+*.sh text eol=lf
+# PowerShell 腳本用 CRLF（Windows PowerShell 5.1 較穩）
+*.ps1 text eol=crlf
