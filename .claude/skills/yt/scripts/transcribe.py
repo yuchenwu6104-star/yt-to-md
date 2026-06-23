@@ -31,30 +31,12 @@ import platform
 import subprocess
 from pathlib import Path
 
-
-# ---------------------------------------------------------------------------
-# Load .env（讓 WHISPER_DEVICE 等可寫在 repo 根 .env，無須 export）
-# ---------------------------------------------------------------------------
-
-
-def _load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, val = line.partition("=")
-            os.environ.setdefault(key.strip(), val.strip())
-
-
-def _find_repo_root() -> Path:
-    for parent in Path(__file__).resolve().parents:
-        if (parent / ".env").exists() or (parent / ".git").exists():
-            return parent
-    return Path(__file__).resolve().parent
-
-
-_load_env_file(_find_repo_root() / ".env")
+# 載入 ytkit.config（單一設定來源；import 時即載入 repo 根 .env，讓 WHISPER_DEVICE 等生效）
+for _p in Path(__file__).resolve().parents:
+    if (_p / "ytkit" / "config.py").exists():
+        sys.path.insert(0, str(_p))
+        break
+from ytkit import config  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +153,7 @@ def main():
     ap.add_argument("--model", default="large-v3-turbo", help="whisper model")
     ap.add_argument(
         "--device",
-        default=os.getenv("WHISPER_DEVICE", "auto"),
+        default=config.whisper_device(),
         help="auto|cuda|mlx|cpu（預設讀 WHISPER_DEVICE，再不然 auto）",
     )
     args = ap.parse_args()

@@ -17,52 +17,22 @@ import urllib.request
 from pathlib import Path
 
 
-def find_repo_env():
-    """從腳本位置往上找 repo 根的 .env（遇 .env 即回傳；到 .git 仍無則停）。"""
-    for parent in Path(__file__).resolve().parents:
-        env = parent / ".env"
-        if env.exists():
-            return env
-        if (parent / ".git").exists():
-            break
-    return None
-
-
-def _read_token(env_path: Path):
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("HACKMD_API_TOKEN="):
-            token = line.split("=", 1)[1].strip()
-            return token  # 可能為空字串，交由上層判斷
-    return None
+# 載入 ytkit.config（單一設定來源：repo 根 .env，回退 ~/.claude/.env）
+for _p in Path(__file__).resolve().parents:
+    if (_p / "ytkit" / "config.py").exists():
+        sys.path.insert(0, str(_p))
+        break
+from ytkit import config  # noqa: E402
 
 
 def load_env_token() -> str:
-    """先找 repo 根 .env，再回退 ~/.claude/.env（維持舊行為相容）。"""
-    candidates = []
-    repo_env = find_repo_env()
-    if repo_env:
-        candidates.append(repo_env)
-    candidates.append(Path.home() / ".claude" / ".env")
-
-    seen_key_but_empty = False
-    for env_path in candidates:
-        if not env_path.exists():
-            continue
-        token = _read_token(env_path)
-        if token:
-            return token
-        if token == "":
-            seen_key_but_empty = True
-
-    if seen_key_but_empty:
-        sys.exit("HACKMD_API_TOKEN 是空的，請去 HackMD Settings → API & Webhooks 產生 token 並填入 .env")
-    sys.exit(
-        "找不到 HACKMD_API_TOKEN（已找 repo 根 .env 與 ~/.claude/.env）。"
-        "請在 .env 設定 HACKMD_API_TOKEN=..."
-    )
+    token = config.hackmd_token()
+    if not token:
+        sys.exit(
+            "找不到 HACKMD_API_TOKEN（已找 repo 根 .env 與 ~/.claude/.env）。"
+            "請在 .env 設定 HACKMD_API_TOKEN=... 或去 HackMD Settings → API & Webhooks 產生"
+        )
+    return token
 
 
 def extract_title(content: str, fallback: str) -> str:

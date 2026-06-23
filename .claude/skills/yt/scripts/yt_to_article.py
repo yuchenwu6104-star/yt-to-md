@@ -54,33 +54,17 @@ def _add_pangu_spacing(text: str) -> str:
     return "\n".join(result)
 
 # ---------------------------------------------------------------------------
-# Load .env（repo 根優先；舊機器路徑為相容回退，Mac 上不存在即略過）
+# 設定：載入 ytkit.config（單一來源；import 時即載入 repo 根 .env）
 # ---------------------------------------------------------------------------
 
+for _p in Path(__file__).resolve().parents:
+    if (_p / "ytkit" / "config.py").exists():
+        sys.path.insert(0, str(_p))
+        break
+from ytkit import config  # noqa: E402
 
-def _load_env_file(path: Path) -> None:
-    """讀 .env 進 os.environ（setdefault，不覆蓋既有環境變數）。"""
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, val = line.partition("=")
-            os.environ.setdefault(key.strip(), val.strip())
-
-
-def _find_repo_root() -> Path:
-    """從本檔往上找 repo 根（遇 .git 或 .env 為止），找不到回退檔案所在目錄。"""
-    for parent in Path(__file__).resolve().parents:
-        if (parent / ".env").exists() or (parent / ".git").exists():
-            return parent
-    return Path(__file__).resolve().parent
-
-
-_REPO_ROOT = _find_repo_root()
-_load_env_file(_REPO_ROOT / ".env")
-# 舊機器相容回退：原本綁死讀的 taiwan_stock_dashboard .env
-_load_env_file(
+# 舊機器相容回退：原本綁死讀的 taiwan_stock_dashboard .env（Mac 無此檔即略過）
+config.load_env_file(
     Path(r"C:\Users\wukee\OneDrive\文件\clon資料\taiwan_stock_dashboard\美股資料\.env")
 )
 
@@ -88,13 +72,12 @@ _load_env_file(
 # Constants
 # ---------------------------------------------------------------------------
 
-MINIMAX_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimax.io/anthropic")
-MINIMAX_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M3")
+MINIMAX_BASE_URL = config.minimax_base_url()
+MINIMAX_API_KEY = config.minimax_api_key()
+MINIMAX_MODEL = config.minimax_model()
 
 # 落檔位置：YT_OUTPUT_DIR 優先，未設則回退 <repo>/output/
-OUTPUT_DIR = Path(os.getenv("YT_OUTPUT_DIR") or (_REPO_ROOT / "output"))
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR = config.output_dir()
 
 # Max transcript characters per MiniMax call
 MAX_TRANSCRIPT_CHARS = 60_000
