@@ -19,13 +19,27 @@
 
 ## 環境需求
 
-- Python 3.10+
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- Python 3.10+、[ffmpeg](https://ffmpeg.org/)、[yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - MiniMax API key（或其他 Anthropic 相容 API）
 
+---
+
+## 快速安裝
+
+Clone 後跑安裝器：依賴檢查 + `pip install` + 把技能 symlink 進 `~/.claude/skills` + 從 `.env.example` 建 `.env`。
+
 ```bash
-pip install youtube-transcript-api yt-dlp httpx
+# Mac / Linux
+./install.sh            # symlink 技能（推薦）
+./install.sh --copy     # 改用複製
+
+# Windows（需開發者模式或系統管理員才能 symlink；否則加 -Copy）
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
+
+裝完編輯 `.env` 填 `ANTHROPIC_API_KEY`、`YT_OUTPUT_DIR`、`HACKMD_API_TOKEN`（選填）即可。
+
+> 手動安裝：`pip install -r requirements.txt`，再自行把 `.claude/skills/yt`、`.claude/skills/humanizer-zh` 連結或複製到 `~/.claude/skills`。Apple Silicon 要本地轉錄無字幕影片，另 `pip install mlx-whisper`。
 
 ---
 

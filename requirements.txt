@@ -1,0 +1,13 @@
+# yt-to-md 核心 pipeline 依賴（install.sh / install.ps1 會 pip install 這份）
+youtube-transcript-api>=1.0.0
+yt-dlp>=2024.0.0
+httpx>=0.25.0
+opencc>=1.1.6
+
+# --- 無字幕影片本地轉錄（依平台擇一，非必裝）---
+# Apple Silicon Mac：install.sh 會自動裝
+#   pip install mlx-whisper
+# Windows + NVIDIA：
+#   pip install faster-whisper nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12
+# 其他 / 只有 CPU：
+#   pip install faster-whisper
