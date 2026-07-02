@@ -23,6 +23,8 @@ Notes:
     cpu  → faster-whisper
 - 共用：yt-dlp、ffmpeg。
 """
+from __future__ import annotations
+
 import os
 import sys
 import argparse

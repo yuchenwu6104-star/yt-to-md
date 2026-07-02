@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "min_duration_minutes": 15,
+    "lookback_days": 2,
+    "max_per_channel": 3
+  },
+  "channels": [
+    {"name": "ものづくり太郎",          "handle": "@monozukuritarou", "category": "JP/Manufacturing-Semi", "enabled": true},
+    {"name": "안될공학 Unreal Tech",     "handle": "@unrealtech",      "category": "KR/Tech-Semi",          "enabled": true},
+    {"name": "슈카월드 Syukaworld",      "handle": "@syukaworld",      "category": "KR/Markets",            "enabled": true, "max_per_channel": 2},
+    {"name": "소수몽키 Sosumonkey",      "handle": "@sosumonkey",      "category": "KR/US-Stocks",          "enabled": true},
+    {"name": "バフェット太郎",           "handle": "@buffett_taro",    "category": "JP/US-Stocks",          "enabled": true},
+    {"name": "トウシル 楽天証券",         "handle": "@ToshiruRsec",     "category": "JP/Markets",            "enabled": true, "max_per_channel": 2},
+    {"name": "中村仁の投資アカデミー",    "handle": "@bloomo-academy",  "category": "JP/Investing",          "enabled": true, "max_per_channel": 2},
+    {"name": "Axios",                    "handle": "@axios",           "category": "EN/Interviews",         "enabled": true, "max_per_channel": 2},
+    {"name": "Meet Kevin",               "handle": "@MeetKevin",                 "category": "EN/US-Stocks",  "enabled": true},
+    {"name": "Ticker Symbol: YOU",       "handle": "@TickerSymbolYOU",           "category": "EN/US-Stocks",  "enabled": true},
+    {"name": "The Compound",             "handle": "@TheCompoundNews",           "category": "EN/Markets",    "enabled": true},
+    {"name": "The Cognitive Revolution", "handle": "@CognitiveRevolutionPodcast","category": "EN/AI",         "enabled": true},
+    {"name": "Decoder with Nilay Patel", "handle": "@DecoderPod",                "category": "EN/Tech",       "enabled": true},
+    {"name": "Monetary Matters",         "handle": "@Monetary-Matters",          "category": "EN/Macro",      "enabled": true},
+    {"name": "EO",                       "handle": "@eo_korea",                  "category": "KR/Startup",    "enabled": true}
+  ]
+}

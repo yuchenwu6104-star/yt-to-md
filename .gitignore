@@ -6,6 +6,13 @@ __pycache__/
 # 本地狀態（不 commit）
 .claude/skills/yt/scripts/processed_videos.json
 .claude/skills/yt/scripts/watcher.log
+.claude/skills/yt/scripts/processed_videos_intl.json
+.claude/skills/yt/scripts/watcher_intl.log
+.claude/skills/yt/scripts/launchd_intl.out.log
+.claude/skills/yt/scripts/launchd_intl.err.log
+
+# macOS
+.DS_Store
 
 # 本地設定
 .claude/settings.local.json
