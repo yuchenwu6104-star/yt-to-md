@@ -280,7 +280,7 @@ def fetch_metadata(video_id: str) -> dict:
 
         return {
             "title": data.get("title", "Unknown"),
-            "channel": data.get("channel", data.get("uploader", "Unknown")),
+            "channel": data.get("channel") or data.get("uploader") or "Unknown",
             "upload_date": upload_date,
             "duration_seconds": data.get("duration", 0),
             "description": (data.get("description", "") or "")[:1000],
@@ -329,18 +329,21 @@ SYSTEM_PROMPT = """\
 專有名詞處理規則（非常重要，必須嚴格遵守）：
 - **人名**：首次出現用「中文（English）」格式，例如「黃仁勳（Jensen Huang）」。之後可只用中文或英文。如果該人物沒有常用中文名，直接用英文，例如「Sam Gardner」，不要音譯。
   - ⚠️ **嚴禁張冠李戴**：不要根據職銜或角色猜測中文名。字幕裡寫的英文名就是那個人，不要用你認為「更有名」的同職位人物替換。例如字幕寫 "Ambassador Alexander Yui" 就是俞大㵢，不是吳釗燮；字幕寫 "CEO John Smith" 就用 John Smith，不要換成你知道的另一位 CEO。如果你不確定某個英文名對應哪個中文名，直接保留英文名。
+  - ⚠️ **頻道主／影片主角的本名以影片 metadata（頻道名、影片標題、描述）為準，不要信字幕的語音轉寫拼法**：自動字幕常把人名聽走樣（Paffrath 聽成 Praath、Cembalest 聽成 Semlas）。字幕拼法查無此人、又無法從 metadata 確認時，寧可只寫頻道名或「主持人／來賓」，不要照抄可疑拼法，更不要腦補成讀音相近的名人。
 - **地名**：台灣讀者熟悉的用中文（美國、日本、台灣、亞利桑那州）；不熟悉的城市或地區直接用英文，例如「Chandler」「Hsinchu」，不要音譯成「錢德勒」「新竹」。
 - **公司/機構名**：有公認中文名的用「中文（English）」，例如「台積電（TSMC）」「輝達（Nvidia）」。沒有公認中文名的直接用英文，例如「Amkor」「ASE」。
 - **技術名詞**：保留英文原名，可在首次出現時加中文解釋，例如「CoWoS（Chip on Wafer on Substrate，一種 2.5D 封裝技術）」。之後直接用英文縮寫。
 - **絕對禁止**：不要把英文專有名詞硬翻成中文音譯。寧可保留英文，也不要創造讀者看不懂的音譯。
 
-## 翻譯品質（當原始字幕為英文時，此節極為重要）
+## 翻譯品質（當原始字幕非中文時——英文、日文、韓文等——此節極為重要）
 
 你的讀者是台灣的投資研究者，他們期待的是**專業、流暢、自然的繁體中文**，不是逐字硬翻。
 
-⚠️ **引述翻譯規則**：講者的直接引述必須翻譯為中文，「」框住的內容必須是中文句子，禁止直接貼上英文原句。但句中的專有名詞（人名、公司名、技術術語）保留英文，不要硬翻。
+⚠️ **引述翻譯規則**：講者的直接引述必須翻譯為中文，「」框住的內容必須是中文句子，禁止直接貼上原文整句（英文、日文、韓文等任何非中文）。但句中的專有名詞（人名、公司名、技術術語）保留英文，不要硬翻。
 - ✅ 正確：「Mythos 的網路戰能力已經危險到，每次你要求它逃離安全沙箱並想辦法傳訊息給你，它幾乎都能做到。」
-- ❌ 錯誤：「『anytime they try and give it a task like, "Hey, escape this secure sandbox and find a way to send me a message." It will almost always do so.』」
+- ❌ 錯誤（貼英文原句）：「『anytime they try and give it a task like, "Hey, escape this secure sandbox and find a way to send me a message." It will almost always do so.』」
+- ❌ 錯誤（貼日文原句）：「電源がいらないセンサーなんです。どんなセンサーでもぶつけようとしてるんですけども」——整段日文假名沒翻，嚴禁。應譯成：「這是一種不需要電源的感測器，基本上想對應任何一種感測器。」
+- ❌ 錯誤（貼韓文原句）：「부품이 아니라 무기가 된 메모리 시장」——韓文諺文沒翻，嚴禁。應譯成：「記憶體已從零件變成武器。」
 - ❌ 也是錯誤（過度翻譯）：「密索斯的網路戰能力已經危險到...」（Mythos 不應音譯）
 
 翻譯原則：
@@ -353,9 +356,9 @@ SYSTEM_PROMPT = """\
 
 
 ⛔ **最高優先級格式鐵則（凌駕「保留原話」原則）**：
-1. 所有講者引述一律翻成自然繁體中文，用「」框住。**即使為了保留原意，也嚴禁輸出任何英文整句**；「」內只能是中文（人名、公司名、技術術語等專有名詞除外）。
+1. 所有講者引述一律翻成自然繁體中文，用「」框住。**即使為了保留原意，也嚴禁輸出任何非中文整句（英文、日文、韓文等外語一律禁止）**；「」內只能是中文（人名、公司名、技術術語等專有名詞除外）。**尤其嚴禁整段日文假名（ひらがな/カタカナ）或韓文諺文（한글）原樣照貼**。
 2. **嚴禁使用 `>` markdown 引用塊**呈現講者原話。講者原話只能用「」。`>` 僅保留給極少數編者摘要。
-3. 若原話是英文，先在腦中翻成中文再寫進「」，不要先貼英文原句。
+3. 若原話是英文、日文、韓文等任何外語，一律先在腦中翻成中文再寫進「」，不要先貼原文整句。
 
 ## 輸出 JSON 格式（不要輸出任何其他內容）
 
@@ -377,6 +380,7 @@ SYSTEM_PROMPT = """\
 ### 導言（1-2 段）
 - 第一段：介紹講者/受訪者是誰——身份、職位、代表性成就。讓讀者知道「這個人是誰、為什麼該聽他說話」。
 - 第二段：用 1-3 句話說明這個影片的核心問題或投資啟示，直接切入主題。
+- ⚠️ 導言的背景資訊（本名、職稱、頭銜、訂閱數、成就）只能寫字幕或影片 metadata 撐得起的內容；不確定的背景寧可不寫，禁止憑記憶補。導言是憑空捏造的高發區，這裡的每個事實都要能指出出處。
 
 ### 正文（6-15 個 ## 小標題段落）
 
@@ -396,6 +400,10 @@ SYSTEM_PROMPT = """\
   - ✅「主持人接著問到點陣圖可能的變化。她回答：」
   - ✅「三月的點陣圖還顯示今年降息一碼，他的判斷不同。他說：」
   - ✅ 最簡形式「Peter 說：」「程凱補充：」永遠可用
+- **禁止複述緊接引述的內容（同話講兩遍，最常犯，務必根除）**：串接句不可以把它下面那句「」引述的內容用第三人稱先講一遍。串接句只交代「背景、在回應什麼問題、對照數字」，講者說了什麼留給引述本身講。若串接句和緊接的引述講的是同一組要點、同樣的數字、同樣的順序，就是複述——刪掉複述的部分，只留脈絡或提問，或直接用最簡形式「他說：」。
+  - ❌（串接複述了引述）：`Ritter 指出，當估值逼近 2 兆美元，未來每年需要約 1,000 億美元稅後淨利才能在 20 倍本益比下支撐。他說：「……當估值逼近 2 兆美元，要在 20 倍本益比下撐住，公司每年要有 1,000 億美元的稅後淨利……」`
+  - ✅（串接只給脈絡）：`談到 SpaceX 逼近 2 兆美元的估值該如何支撐，Ritter 說：「……當估值逼近 2 兆美元，要在 20 倍本益比下撐住，公司每年要有 1,000 億美元的稅後淨利……」`
+  - 判準：把串接句和緊接引述並排，如果串接句刪掉後讀者不會少任何資訊（數字、事實都在引述裡），那串接句就是複述，砍到只剩脈絡或提問。
 - **禁止在引述前加描述性過渡句或語氣評價**，例如「他把話說得很直接」「她用一個生動的比喻說明」「Peter 強調」「Clark 特別指出」。串接句不可以替講者的話打分、形容語氣、預告精彩度
 - **禁止「舞台指示／旁白」式串接（最常犯，務必根除）**：不要描寫對話的動作、節奏、戲劇性，或你自己的導演視角。鬥嘴段最容易犯，因為沒有事實可補，模型就改去報幕。以下這類一律禁止：
   - ❌ 描寫語氣／動作：「Ian 笑著接：」「Ian 順著接：」「Tobias 馬上搭腔：」「Tobias 馬上吐槽：」「Tobias 再補一刀：」「Tobias 馬上接梗：」「Ian 苦笑：」
@@ -410,11 +418,13 @@ SYSTEM_PROMPT = """\
   - ❌（加戲）`Ian 笑著接：「我想說全是 SAP HANA。」Tobias 馬上搭腔：「我本來也要說俄羅斯人和 SAP HANA。」`
   - ✅（直述）`Ian 說：「我想說全是 SAP HANA。」Tobias 接著說：「我本來也要說俄羅斯人和 SAP HANA。」`
   - 同一段密集對話時，連「說」都可省的更乾淨形式：`Ian：「……」Tobias：「……」`
+- **多人對談的歸屬紀律（歸屬錯誤是硬失敗，與數字錯誤同級）**：每句引述掛在誰名下，只能依字幕裡的說話者線索判定——`>>` 交替標記、講者自稱、互相稱名、上下文接話——嚴禁依「誰比較有名」「誰常講這類話」腦補。字幕線索不足、無法確定是誰說的，就寫「節目中提到」「兩人都同意」這類不指名的寫法，禁止硬掛人名。**嚴禁把兩位講者的話縫成同一段「」引述**：對話中一人接話，就拆成兩段引述各自具名。引述內若出現第三人稱線索（"he's saying"、「Elon 說會的」），代表這段是某人在轉述別人，不是被轉述者本人在說話，不要標成本人引述。
 - **禁止形容講者的問題或觀點**：不要寫「他丟出一個很尖的問題」「這是一個饒有深意的觀點」「他描述了一個令人不寒而慄的場景」這類評價。直接寫「他問：」「他的觀點是：」「他舉了一個例子：」
 
 ### 結語（1 段）
 - 2-3 句平實語句收尾，不要寫金句式總結（「X 不僅是 A，更是 B」這類否定式排比）
 - 不要用「首先...其次...第三」的三段式結構
+- ⚠️ 結語只准總結正文已經出現的內容，嚴禁引入正文沒有的數據、主題或論點。結語提到的每個事實都必須能在上文找到；想放進結語的內容若正文沒有，先回頭補正文段落，不要只在結語出現。
 
 ### 格式規範
 - 總字數：3000-8000 字（視原始內容長度而定，寧可多寫也不要遺漏重要觀點）
@@ -559,6 +569,76 @@ def _ascii_letter_ratio(s: str) -> float:
     return letters / max(len(s), 1)
 
 
+# 通用英文縮寫／詞彙（是術語不是專名），實體對帳閘門略過，避免誤報。
+_ENTITY_STOPWORDS = frozenset({
+    "the", "and", "for", "with", "that", "this", "from", "into", "your",
+    "ai", "agi", "ml", "llm", "llms", "gpu", "gpus", "cpu", "tpu", "api", "apis",
+    "ceo", "cfo", "cto", "coo", "gdp", "ipo", "etf", "roi", "kpi", "okr",
+    "saas", "b2b", "b2c", "iot", "faq", "crm", "erp", "seo", "vc", "pe",
+    "usa", "us", "uk", "eu", "un", "ok", "ux", "ui", "ev", "evs", "vr", "ar",
+    "q1", "q2", "q3", "q4", "r&d", "ceos", "cios", "kyc", "wto", "wef",
+    "youtube", "podcast", "podcasts",  # 平台/頁尾用語，非專名
+})
+
+
+def _fabricated_english_entities(article: str, transcript: str, exempt: str = "") -> list:
+    """找出文章裡有、但字幕完全對不上的英文專名（疑似 /yt 憑記憶捏造）。
+
+    中文文章裡成串的大寫英文幾乎必是專名（人名/機構/benchmark/產品），不像
+    英文文章會有句首大寫的普通字，所以這裡只掃英文 token。三層放行把誤報壓低：
+    子字串命中、連字號/點分段逐段命中、difflib 模糊命中（容忍 whisper 同音誤字）。
+    近未來情境的虛構產品名（GLM 5.2、Mythos）只要字幕對得上就放行；要擋的是
+    連字幕都沒有的（Iridium、SWE-bench）。見記憶 yt-fabricates-proper-nouns。
+
+    exempt：頻道名＋影片標題等已知 metadata，這些 token（含其首字母縮寫，如
+    Special Competitive Studies Project→SCSP）一律放行，免得頻道名自己警告自己。
+    """
+    import difflib
+
+    tl = transcript.lower()
+    twords = set(re.findall(r"[a-z0-9]+", tl))
+    # 已知 metadata 豁免集：各 token + 整串去空格 + 每個多詞片語的首字母縮寫。
+    ex_words = set(re.findall(r"[a-z0-9]+", exempt.lower()))
+    ex_squashed = re.sub(r"[^a-z0-9]", "", exempt.lower())
+    for phrase in re.findall(r"[A-Za-z][A-Za-z .&'-]+", exempt):
+        ws = re.findall(r"[A-Za-z]+", phrase)
+        if len(ws) >= 2:
+            ex_words.add("".join(w[0] for w in ws).lower())  # 首字母縮寫 SCSP
+    # 去空格版：字幕常被逐字稿/自動字幕切開（chat gpt、tik tok、co wos），
+    # 比對去掉所有非英數字元的連續字串，才不會把 ChatGPT/TikTok/CoWoS 誤判成捏造。
+    tl_squashed = re.sub(r"[^a-z0-9]", "", tl)
+    # 掃描前先剝掉 YAML frontmatter（youtube_url、video_title 等 metadata 不該比對）、
+    # 「原始影片」參照行、以及所有 URL（網址裡的 youtube、影片 ID 都是雜訊）。
+    body = re.sub(r"\A---\n.*?\n---\n", "", article, count=1, flags=re.DOTALL)
+    body = re.sub(r"https?://\S+", "", body)
+    scan = "\n".join(l for l in body.splitlines() if "原始影片" not in l)
+    flagged, seen = [], set()
+    for tok in re.findall(r"[A-Z][A-Za-z0-9]*(?:[-'.&][A-Za-z0-9]+)*", scan):
+        norm = tok.lower()
+        bare = re.sub(r"[-'.&]", "", norm)
+        if norm in seen or len(bare) < 4 or norm in _ENTITY_STOPWORDS:
+            continue
+        seen.add(norm)
+        if norm in ex_words or (bare and bare in ex_squashed):  # 頻道名/標題 metadata
+            continue
+        if norm in tl or bare in tl_squashed:           # ① 子字串／去空格命中
+            continue
+        parts = [p for p in re.split(r"[-'.&]", norm) if p]
+        if parts and all(p in tl for p in parts):       # ② 分段逐段命中
+            continue
+        best = max(                                     # ③ 模糊命中（whisper 誤字）
+            (difflib.SequenceMatcher(None, bare, w).ratio()
+             for w in twords if abs(len(w) - len(bare)) <= 2),
+            default=0.0,
+        )
+        # 0.80 容忍 whisper 同音誤字（DeepSeek/DeepSeq=0.80、Cerebras/Cerebrus=0.88），
+        # 真捏造（Iridium/Fidelity=0.40、SWE-bench/benchmark=0.59）離這條線還很遠。
+        if best >= 0.80:
+            continue
+        flagged.append(tok)
+    return flagged
+
+
 def format_violations(article: str) -> list:
     """Check a generated article against the SYSTEM_PROMPT 格式鐵則.
 
@@ -578,6 +658,29 @@ def format_violations(article: str) -> list:
         issues.append(
             f"{len(eng_quotes)} 段「」引述以英文為主（鐵則 1：引述必須翻成中文），"
             f"例如：「{eng_quotes[0][:40]}...」"
+        )
+    # 未翻譯的日文假名／韓文諺文引述：翻好的中文不可能含假名或諺文，故為「沒翻」的鐵證。
+    # （中日共用漢字無法判別，但假名 U+3040–30FF 與諺文 U+AC00–D7A3 是非中文來源的明確標記。）
+    kana_hangul = re.compile(r"[぀-ゟ゠-ヿ가-힣]")
+    foreign_quotes = [
+        q for q in re.findall(r"「([^「」]{10,})」", article)
+        if len(kana_hangul.findall(q)) >= 3
+    ]
+    if foreign_quotes:
+        issues.append(
+            f"{len(foreign_quotes)} 段「」引述含未翻譯的日文假名／韓文諺文"
+            f"（鐵則 1：引述必須翻成中文），例如：「{foreign_quotes[0][:40]}...」"
+        )
+    # 全文語言稽核：翻好的繁中文章不該大量含假名/諺文。
+    # 這條不限「」內——也涵蓋 "…" 直引號、段落內文、標題（捕捉整篇鏡像輸出的情形，
+    # 例如模型把韓文影片整篇照寫韓文）。排除「原始影片」參照行（本就保留原文標題）。
+    lang_scan = "\n".join(l for l in article.splitlines() if "原始影片" not in l)
+    body_kana = len(re.findall(r"[぀-ゟ゠-ヿ]", lang_scan))
+    body_hangul = len(re.findall(r"[가-힣]", lang_scan))
+    if body_hangul >= 5 or body_kana >= 12:
+        issues.append(
+            f"全文含大量未翻譯外語（諺文 {body_hangul} 字、假名 {body_kana} 字；"
+            f"繁中文章應趨近 0，疑似標題/段落/直引號整段未翻譯）"
         )
     blockquotes = re.findall(r"(?m)^>\s", article)
     if len(blockquotes) > 3:
@@ -601,6 +704,7 @@ def format_violations(article: str) -> list:
     stage_phrases = (
         "補了一句", "補了一個", "補一句", "補一刀", "補了一刀",
         "補了最後一刀", "補了一個畫面", "補了一個細節",
+        "補上", "補了一段", "補述", "再補一句", "再補一個",
         "笑著接", "順著接", "馬上搭腔", "馬上吐槽", "再補一刀",
         "把方向拉回", "把梗接到", "話鋒一轉", "切入核心",
         "苦笑著說", "笑著說", "笑說", "打趣", "搶話",
@@ -616,7 +720,63 @@ def format_violations(article: str) -> list:
         issues.append(
             f"串接區替講者語氣打分（出現「{editorial[0]}」，禁止形容講者怎麼講話，讓引述自己說話）"
         )
+    # 形容講者語氣的銳利／簡潔／態度（藏在引號前那句裡）。
+    # 注意：以下黑名單只是安全網；真正的規則是 system prompt 的「中性引述動詞白名單」，
+    # 模型寫的當下就該只用 說／表示／指出／提到／認為／補充／回答／問／接著說。
+    tone_words = (
+        "尖銳", "犀利", "一針見血", "毫不留情", "不留情面", "不客氣",
+        "火力全開", "很簡潔", "很乾脆", "語帶保留", "語重心長", "意味深長",
+    )
+    tone_hit = next((w for w in tone_words if w in narration), None)
+    if tone_hit:
+        issues.append(
+            f"串接區替講者語氣打分（出現「{tone_hit}」，禁止形容講者語氣，讓引述自己說話）"
+        )
+    # 白名單外的非中性引述動詞（system prompt 已明列禁用）
+    nonneutral_verbs = ("坦言", "坦承", "直言", "不諱言", "爆料")
+    verb_hit = next((v for v in nonneutral_verbs if v in narration), None)
+    if verb_hit:
+        issues.append(
+            f"串接區用了白名單外的引述動詞（出現「{verb_hit}」，"
+            "只准用 說／表示／指出／提到／認為／補充／回答／問／接著說）"
+        )
     return issues
+
+
+def _redundant_narration(article: str) -> list:
+    """找出「串接句複述了緊接引述」的段落（同話講兩遍）。
+
+    每個小節常是「串接(轉述) →「引述」」；若串接句把下面引述的內容先講一遍，
+    讀者會覺得同一段話講兩次。以 CJK 2-gram 重疊 + 共同帶單位數字判定，門檻刻意
+    偏高，只抓明顯複述——交代脈絡／提問的 additive 串接不該中。純警告、不觸發重生
+    （複述屬內容結構問題，重生風險高，交由 humanizer 刪成純脈絡）。回傳串接句預覽。
+    """
+    def _bigrams(s: str) -> set:
+        s = re.sub(r"[^一-鿿]", "", s)
+        return {s[i:i + 2] for i in range(len(s) - 1)}
+
+    def _nums(s: str) -> set:
+        return set(re.findall(r"[0-9][0-9,.]*\s*(?:兆|億|倍|%|萬)", s))
+
+    def _is_quote_para(p: str) -> bool:
+        qs = re.findall(r"「([^「」]{15,})」", p)
+        return bool(qs) and sum(len(x) for x in qs) > len(p) * 0.5
+
+    paras = [p.strip() for p in article.split("\n\n") if p.strip()]
+    hits = []
+    for i in range(1, len(paras)):
+        cur, prev = paras[i], paras[i - 1]
+        if cur.startswith("#") or prev.startswith("#"):
+            continue
+        if not _is_quote_para(cur) or _is_quote_para(prev):
+            continue
+        quote = " ".join(re.findall(r"「([^「」]+)」", cur))
+        shared_nums = _nums(prev) & _nums(quote)
+        bp, bq = _bigrams(prev), _bigrams(quote)
+        jac = len(bp & bq) / max(1, len(bp | bq))
+        if len(shared_nums) >= 2 or jac >= 0.30:
+            hits.append(prev[:50])
+    return hits
 
 
 def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
@@ -662,28 +822,63 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
 
 請用 JSON 格式輸出（嚴格遵守 system prompt 中的格式要求）。"""
 
-    result = _request_article(user_prompt, metadata)
-    result["article"] = _strip_model_artifacts(result.get("article", ""))
-    issues = format_violations(result.get("article", ""))
-    if not issues:
+    # 初次 + 最多 2 次重試。日韓來源 MiniMax 有時整篇鏡像輸出原文，單次重試不夠，
+    # 故迴路重試並保留「違規最少」的一版。
+    def _finalize(result: dict) -> dict:
+        # 英文專名實體對帳：純警告、不觸發重生。自動字幕對人名拼寫常很爛
+        # （Calacanis、Klarman 都會對不上），若用來重生會誤刪真名；故只把「字幕
+        # 查無對應」的英文專名印到 stderr，供 humanizer/監督核對。見記憶
+        # yt-fabricates-proper-nouns（撈得到 Iridium、SWE-bench 這類真捏造）。
+        if transcript and result:
+            # 換行分隔，讓頻道名與標題各自算首字母縮寫（否則 SCSP 會併成 scspcwa…）
+            exempt = f"{metadata.get('channel', '')}\n{metadata.get('title', '')}"
+            sus = _fabricated_english_entities(result.get("article", ""), transcript, exempt)
+            if sus:
+                print(
+                    "[note] 下列英文專名在逐字稿裡找不到對應，humanizer 請逐一查證"
+                    "（可能是憑記憶捏造，也可能只是字幕把名字拼錯）："
+                    + "、".join(sus[:12]) + ("…" if len(sus) > 12 else ""),
+                    file=sys.stderr,
+                )
+        # 串接句複述緊接引述（同話講兩遍）：純警告、不觸發重生，交由 humanizer
+        # 刪成純脈絡或最簡「他說：」。見 humanizer-zh 模式 33。
+        red = _redundant_narration(result.get("article", "")) if result else []
+        if red:
+            print(
+                "[note] 下列串接句疑似複述了緊接的引述（同話講兩遍），humanizer 請刪成純脈絡或最簡「他說：」："
+                + "；".join(f"「{r}…」" for r in red[:6]) + ("…" if len(red) > 6 else ""),
+                file=sys.stderr,
+            )
         return result
 
-    print(f"[warn] 格式鐵則未通過：{'；'.join(issues)}", file=sys.stderr)
-    print("[warn] 附上違規說明重新生成一次...", file=sys.stderr)
-    retry_prompt = user_prompt + (
-        "\n\n⚠️ 你上一次的輸出違反了格式鐵則：" + "；".join(issues) + "。"
-        "請重新輸出完整 JSON：所有講者引述必須先翻成自然繁體中文再放進「」，"
-        "嚴禁任何英文整句，嚴禁 > 引用塊。"
-    )
-    retry = _request_article(retry_prompt, metadata)
-    retry["article"] = _strip_model_artifacts(retry.get("article", ""))
-    retry_issues = format_violations(retry.get("article", ""))
-    if retry_issues:
-        print(
-            f"[warn] 重試後仍未完全通過：{'；'.join(retry_issues)}（保留違規較少的一版）",
-            file=sys.stderr,
-        )
-    return retry if len(retry_issues) <= len(issues) else result
+    MAX_ATTEMPTS = 3
+    best = None
+    best_issues = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        if attempt == 1:
+            prompt = user_prompt
+        else:
+            prompt = user_prompt + (
+                "\n\n⚠️ 你上一次的輸出違反了格式鐵則：" + "；".join(best_issues) + "。"
+                "請重新輸出完整 JSON。最重要：**整篇文章（標題、導言、所有段落、引述）必須是繁體中文**，"
+                "嚴禁任何非中文整句或段落（英文、日文、韓文等外語，尤其嚴禁整段日文假名或韓文諺文原樣照貼，"
+                "也嚴禁用 \"…\" 或「」貼外語原句）；嚴禁 > 引用塊。"
+                "專有名詞（人名、公司名、技術術語）可保留英文，"
+                "但**只能用逐字稿裡實際出現的名字**——嚴禁憑記憶補出字幕沒有的"
+                "機構名、benchmark、產品名（例如把講者背景、公司、評測名「腦補」成你以為的那個）；"
+                "字幕沒提到確切名字時，用中性描述（如「一項評測」「一家資產管理公司」）帶過。"
+            )
+        cand = _request_article(prompt, metadata)
+        cand["article"] = _strip_model_artifacts(cand.get("article", ""))
+        cand_issues = format_violations(cand.get("article", ""))
+        if not cand_issues:
+            return _finalize(cand)
+        if best_issues is None or len(cand_issues) < len(best_issues):
+            best, best_issues = cand, cand_issues
+        print(f"[warn] 第 {attempt}/{MAX_ATTEMPTS} 次格式鐵則未通過：{'；'.join(cand_issues)}",
+              file=sys.stderr)
+    print(f"[warn] {MAX_ATTEMPTS} 次後仍未完全通過，保留違規最少的一版", file=sys.stderr)
+    return _finalize(best)
 
 
 def _request_article(user_prompt: str, metadata: dict) -> dict:
@@ -795,42 +990,155 @@ def _request_article(user_prompt: str, metadata: dict) -> dict:
 # 4b. Generate article with auto-split for long transcripts
 # ---------------------------------------------------------------------------
 
+# 重試耗盡後，成稿仍含這麼多未翻譯外語（假名+諺文）即視為「翻譯失敗」，不存檔。
+# 校準：乾淨繁中文章趨近 0；少量片假名專名（キオクシア 等）約 10–20；
+# 整段或半篇未翻譯則動輒上百～上千。80 是「零星專名」與「成段未翻」之間的界線。
+CATASTROPHIC_FOREIGN_CHARS = 80
+_KANA_HANGUL_RE = re.compile(r"[぀-ゟ゠-ヿ가-힣]")
+
+
+def _foreign_char_count(article: str) -> int:
+    """成稿中未翻譯的日文假名／韓文諺文字數（排除保留原文的「原始影片」參照行）。"""
+    scan = "\n".join(l for l in article.splitlines() if "原始影片" not in l)
+    return len(_KANA_HANGUL_RE.findall(scan))
+
+
+def _split_into_n(text: str, n: int) -> list[str]:
+    """把逐字稿切成 n 段，盡量落在段落／換行邊界上。"""
+    if n <= 1:
+        return [text]
+    parts = []
+    start = 0
+    for i in range(1, n):
+        cut = _find_split_point(text, len(text) * i // n)
+        if cut <= start:          # 安全：避免空段或回頭切
+            cut = len(text) * i // n
+        parts.append(text[start:cut])
+        start = cut
+    parts.append(text[start:])
+    return [p for p in parts if p.strip()]
+
+
+def _repair_translation(article: str, metadata: dict) -> "str | None":
+    """日韓來源最後補救：把成稿殘留的假名／諺文整句翻成繁中，其餘逐字不動。
+    只在硬閘門即將擋下時觸發。回傳修補後全文；失敗回 None。"""
+    import time as _time
+    if not MINIMAX_API_KEY:
+        return None
+    sys_prompt = (
+        "你是繁體中文編輯。使用者給你的文章大致已是繁中，但仍殘留未翻譯的日文假名"
+        "（ひらがな／カタカナ）或韓文諺文（한글）。你的唯一任務：把所有殘留的假名／"
+        "諺文整句翻成自然的繁體中文，其餘內容（文章架構、標點、已是中文的部分、"
+        "Markdown 標題、「」引號、英文專有名詞）逐字不動。直接輸出修好的完整文章，"
+        "不要任何前言、說明、JSON 或程式碼框。"
+    )
+    user = f"文章如下，請把所有假名／諺文翻成繁中後，輸出完整全文：\n\n{article}"
+    try:
+        with httpx.Client(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
+            for attempt in range(2):
+                try:
+                    r = client.post(
+                        f"{MINIMAX_BASE_URL}/v1/messages",
+                        headers={
+                            "x-api-key": MINIMAX_API_KEY,
+                            "anthropic-version": "2023-06-01",
+                            "content-type": "application/json",
+                        },
+                        json={
+                            "model": MINIMAX_MODEL,
+                            "thinking": {"type": "disabled"},
+                            "max_tokens": 16384,
+                            "system": sys_prompt,
+                            "messages": [{"role": "user", "content": user}],
+                        },
+                    )
+                except (httpx.TimeoutException, httpx.NetworkError):
+                    if attempt == 0:
+                        _time.sleep(10)
+                        continue
+                    return None
+                if r.status_code >= 500 and attempt == 0:
+                    _time.sleep(5)
+                    continue
+                r.raise_for_status()
+                break
+        data = r.json()
+        text = ""
+        for block in data.get("content", []):
+            if block.get("type") == "text":
+                text = block["text"]
+                break
+        text = re.sub(r"^```(?:\w+)?\s*\n?", "", text.strip())
+        text = re.sub(r"\n?```\s*$", "", text.strip()).strip()
+        return text or None
+    except Exception as e:
+        print(f"[warn] 翻譯修補 pass 失敗：{e}", file=sys.stderr)
+        return None
+
+
 def generate_article(transcript: str, metadata: dict) -> dict:
-    """Generate article. Splits into two MiniMax calls if transcript exceeds limit."""
-    if len(transcript) <= MAX_TRANSCRIPT_CHARS:
-        return call_minimax(transcript, metadata)
+    """生成文章。長逐字稿拆成多次 MiniMax 呼叫；日韓來源用較小的分段
+    （短段落能讓 M3 不偷懶整段照貼原文）。最後對殘留假名／諺文做翻譯修補。"""
+    # 來源語言偵測：原始逐字稿含大量假名／諺文 → 日韓來源
+    is_jp_kr = len(_KANA_HANGUL_RE.findall(transcript)) >= 200
+    # 分段目標字數：日韓來源切小段（~18k），英／中維持原本 60k 門檻
+    chunk_target = 18_000 if is_jp_kr else MAX_TRANSCRIPT_CHARS
+    n_parts = ((len(transcript) - 1) // chunk_target + 1) if transcript else 1
+    n_parts = max(1, min(n_parts, 5))
 
-    print(f"      字幕共 {len(transcript)} 字元，超過 {MAX_TRANSCRIPT_CHARS}，拆為前後兩段...")
+    if n_parts == 1:
+        result = call_minimax(transcript, metadata)
+    else:
+        print(f"      字幕共 {len(transcript)} 字元"
+              f"{'（日韓來源，切小段）' if is_jp_kr else f'，超過 {MAX_TRANSCRIPT_CHARS}'}"
+              f"，拆為 {n_parts} 段...")
+        segments = _split_into_n(transcript, n_parts)
+        n = len(segments)
+        chunks = []
+        for i, seg in enumerate(segments):
+            if i == 0:
+                info = (f"【重要】這是完整逐字稿的第 1 段（共 {n} 段）。請正常撰寫文章，"
+                        "包含導言和正文段落。不要寫結語，後續段落會接在你的輸出之後。")
+            elif i == n - 1:
+                info = (f"【重要】這是完整逐字稿的最後一段（第 {i+1}／{n} 段）。請直接從新的 "
+                        "## 段落標題開始，不要重複導言、不要再次介紹講者；可以寫結語。"
+                        "這些內容會接在前面段落之後。")
+            else:
+                info = (f"【重要】這是完整逐字稿的中間段（第 {i+1}／{n} 段）。請直接從新的 "
+                        "## 段落標題開始，不要導言、不要結語、不要重複介紹講者。"
+                        "這些內容會接在前面段落之後。")
+            chunks.append(call_minimax(seg, metadata, part_info=info))
+            print(f"      第 {i+1}/{n} 段完成")
 
-    split_pos = _find_split_point(transcript, len(transcript) // 2)
-    first_half = transcript[:split_pos]
-    second_half = transcript[split_pos:]
-    print(f"      前半: {len(first_half)} 字元 | 後半: {len(second_half)} 字元")
+        merged_article = "\n\n".join(c.get("article", "") for c in chunks)
+        all_tags = list(dict.fromkeys(t for c in chunks for t in c.get("tags", [])))
+        result = {
+            "title": chunks[0].get("title", metadata.get("title", "")),
+            "tags": all_tags,
+            "filename_keywords": chunks[0].get("filename_keywords", ""),
+            "article": merged_article,
+        }
 
-    part1 = call_minimax(
-        first_half,
-        metadata,
-        part_info="【重要】這是完整逐字稿的前半段（約前 50%）。請正常撰寫文章，包含導言和正文段落。不要寫結語，因為後半段將另行處理，內容會接在你的輸出之後。",
-    )
-    print(f"      前半完成: {part1.get('title', 'N/A')}")
+    # 硬閘門前的補救：成稿若仍殘留大量假名／諺文，先做一次翻譯修補 pass。
+    foreign = _foreign_char_count(result.get("article", ""))
+    if foreign >= CATASTROPHIC_FOREIGN_CHARS:
+        print(f"      [info] 成稿殘留 {foreign} 假名／諺文，啟動翻譯修補 pass...",
+              file=sys.stderr)
+        repaired = _repair_translation(result.get("article", ""), metadata)
+        if repaired:
+            rep_foreign = _foreign_char_count(repaired)
+            if rep_foreign < foreign:
+                result["article"] = repaired
+                foreign = rep_foreign
+                print(f"      [info] 修補後降為 {foreign} 假名／諺文", file=sys.stderr)
 
-    part2 = call_minimax(
-        second_half,
-        metadata,
-        part_info="【重要】這是完整逐字稿的後半段（約後 50%）。請直接從新的 ## 段落標題開始撰寫，不要重複導言、不要再次介紹講者。這些內容會接在前半段文章之後。",
-    )
-    print(f"      後半完成")
-
-    merged_article = part1.get("article", "") + "\n\n" + part2.get("article", "")
-
-    all_tags = list(dict.fromkeys(part1.get("tags", []) + part2.get("tags", [])))
-
-    return {
-        "title": part1.get("title", metadata.get("title", "")),
-        "tags": all_tags,
-        "filename_keywords": part1.get("filename_keywords", ""),
-        "article": merged_article,
-    }
+    # 硬失敗閘門：重試＋修補後仍有大量未翻譯外語 → 拋錯不存檔，留待下次重抓。
+    if foreign >= CATASTROPHIC_FOREIGN_CHARS:
+        raise RuntimeError(
+            f"翻譯失敗：重試＋修補後成稿仍含 {foreign} 個未翻譯日文假名/韓文諺文字元"
+            f"（門檻 {CATASTROPHIC_FOREIGN_CHARS}）。不存檔，本片留待下次輪巡重抓。"
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -839,6 +1147,7 @@ def generate_article(transcript: str, metadata: dict) -> dict:
 
 def sanitize_filename(s: str) -> str:
     """Remove or replace characters that are invalid in filenames."""
+    s = s or "Unknown"
     s = re.sub(r'[<>:"/\\|?*]', "", s)
     s = re.sub(r"\s+", "_", s.strip())
     return s[:50]  # keep it reasonable
@@ -891,7 +1200,7 @@ tags: {tags_yaml}
 {article_data.get('article', '')}
 
 ---
-*本文根據 YouTube 影片內容整理，僅供參考。*
+*本文根據 YouTube 影片內容由 AI 整理生成，僅供參考。*
 """
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -903,8 +1212,12 @@ tags: {tags_yaml}
 # Main
 # ---------------------------------------------------------------------------
 
-def main(youtube_url: str) -> str:
+def main(youtube_url: str, transcript_file: str | None = None) -> str:
     """Full pipeline: URL → transcript → article → saved file.
+
+    If transcript_file is given (e.g. a Whisper transcript for a video whose
+    subtitles are disabled), it is used directly instead of fetching subtitles,
+    and is also saved alongside the article as the cross-reference 原文字幕.
 
     Returns the path of the saved file.
     """
@@ -912,16 +1225,24 @@ def main(youtube_url: str) -> str:
     video_id = extract_video_id(youtube_url)
     print(f"      影片 ID: {video_id}")
 
-    print(f"[2/6] 抓取字幕...")
-    transcript, lang = fetch_transcript(video_id)
-    print(f"      字幕語言: {lang} | 長度: {len(transcript)} 字元")
-
-    print(f"[3/6] 儲存英文原文字幕...")
-    en_transcript = fetch_english_transcript(video_id) if lang != "en" else transcript
-    if en_transcript:
-        print(f"      英文字幕: {len(en_transcript)} 字元（完整保留，不截斷）")
+    if transcript_file:
+        print(f"[2/6] 讀取本地逐字稿（whisper fallback）...")
+        transcript = Path(transcript_file).read_text(encoding="utf-8").strip()
+        print(f"      逐字稿長度: {len(transcript)} 字元 | 來源: {transcript_file}")
+        print(f"[3/6] 以 whisper 逐字稿作為原文字幕保留...")
+        en_transcript = transcript
+        print(f"      原文字幕: {len(en_transcript)} 字元（完整保留，不截斷）")
     else:
-        print(f"      無法取得英文字幕，跳過")
+        print(f"[2/6] 抓取字幕...")
+        transcript, lang = fetch_transcript(video_id)
+        print(f"      字幕語言: {lang} | 長度: {len(transcript)} 字元")
+
+        print(f"[3/6] 儲存英文原文字幕...")
+        en_transcript = fetch_english_transcript(video_id) if lang != "en" else transcript
+        if en_transcript:
+            print(f"      英文字幕: {len(en_transcript)} 字元（完整保留，不截斷）")
+        else:
+            print(f"      無法取得英文字幕，跳過")
 
     print(f"[4/6] 取得影片資訊...")
     metadata = fetch_metadata(video_id)
@@ -956,8 +1277,15 @@ def main(youtube_url: str) -> str:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python yt_to_article.py <YouTube URL>")
-        sys.exit(1)
-    result = main(sys.argv[1])
+    import argparse
+
+    ap = argparse.ArgumentParser(description="YouTube 影片 → 深度洞察文章")
+    ap.add_argument("youtube_url", help="YouTube URL")
+    ap.add_argument(
+        "--transcript-file",
+        default=None,
+        help="本地逐字稿 .txt（無字幕影片的 whisper fallback，跳過抓字幕步驟）",
+    )
+    cli_args = ap.parse_args()
+    result = main(cli_args.youtube_url, cli_args.transcript_file)
     print(f"\n完成！文章已儲存至：{result}")
