@@ -19,6 +19,8 @@
     {"name": "The Cognitive Revolution", "handle": "@CognitiveRevolutionPodcast","category": "EN/AI",         "enabled": true},
     {"name": "Decoder with Nilay Patel", "handle": "@DecoderPod",                "category": "EN/Tech",       "enabled": true},
     {"name": "Monetary Matters",         "handle": "@Monetary-Matters",          "category": "EN/Macro",      "enabled": true},
-    {"name": "EO",                       "handle": "@eo_korea",                  "category": "KR/Startup",    "enabled": true}
+    {"name": "EO",                       "handle": "@eo_korea",                  "category": "KR/Startup",    "enabled": true},
+    {"name": "The Verge",                "handle": "@TheVerge",                  "category": "EN/Tech",       "enabled": true},
+    {"name": "LangChain",                "handle": "@LangChain",                 "category": "EN/AI",         "enabled": true}
   ]
 }
