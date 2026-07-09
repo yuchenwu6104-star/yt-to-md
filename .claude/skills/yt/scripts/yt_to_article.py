@@ -141,7 +141,11 @@ def fetch_transcript(video_id: str) -> tuple[str, str]:
         return "\n".join(lines), lang
     except Exception as api_err:
         print(f"[warn] youtube-transcript-api 失敗 ({type(api_err).__name__})，改用 yt-dlp fallback", file=sys.stderr)
-        return _fetch_transcript_via_ytdlp(video_id)
+        try:
+            return _fetch_transcript_via_ytdlp(video_id)
+        except Exception as ytdlp_err:
+            print(f"[warn] yt-dlp 字幕失敗 ({ytdlp_err})，改用本地 Whisper 轉錄", file=sys.stderr)
+            return _fetch_transcript_via_whisper(video_id)
 
 
 def _fetch_transcript_via_ytdlp(video_id: str) -> tuple[str, str]:
@@ -180,6 +184,28 @@ def _fetch_transcript_via_ytdlp(video_id: str) -> tuple[str, str]:
                     Path(vtts[0]).unlink(missing_ok=True)
 
     raise RuntimeError(f"影片 {video_id} 沒有可用的字幕（API 與 yt-dlp 均失敗）")
+
+
+def _fetch_transcript_via_whisper(video_id: str) -> tuple[str, str]:
+    """Last-resort fallback: download audio and transcribe with local Whisper.
+
+    Covers both「影片真的沒字幕」and「YouTube 字幕端點被封（IpBlocked / 429）」——
+    音訊走 googlevideo CDN，字幕端點被封時通常仍可下載。
+    """
+    import tempfile
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import transcribe as local_whisper
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        audio = local_whisper._download_audio(url, str(Path(tmpdir) / video_id))
+        text, lang = local_whisper.transcribe(
+            audio, None, "large-v3-turbo", config.whisper_device()
+        )
+    if not text.strip():
+        raise RuntimeError(f"影片 {video_id} Whisper 轉錄結果為空")
+    return text, lang or "whisper"
 
 
 def _parse_vtt(vtt_text: str) -> str:
