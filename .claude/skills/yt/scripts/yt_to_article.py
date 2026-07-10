@@ -776,12 +776,15 @@ def format_violations(article: str) -> list:
 
 
 def _redundant_narration(article: str) -> list:
-    """找出「串接句複述了緊接引述」的段落（同話講兩遍）。
+    """找出「串接句複述了緊接引述」的句子（同話講兩遍）。
 
     每個小節常是「串接(轉述) →「引述」」；若串接句把下面引述的內容先講一遍，
-    讀者會覺得同一段話講兩次。以 CJK 2-gram 重疊 + 共同帶單位數字判定，門檻刻意
-    偏高，只抓明顯複述——交代脈絡／提問的 additive 串接不該中。純警告、不觸發重生
-    （複述屬內容結構問題，重生風險高，交由 humanizer 刪成純脈絡）。回傳串接句預覽。
+    讀者會覺得同一段話講兩次。逐句判定而非整段：混血串接（一句複述焊在有合法
+    背景數字的段落裡）在整段比對下會被稀釋放行，這正是過去漏抓的原因。串接段
+    按句切開，任一句的 CJK 2-gram 過半被引述涵蓋、或與引述共用 ≥2 個帶單位數字，
+    即為複述。純警告、不觸發重生（複述屬內容結構問題，重生風險高，交由 humanizer
+    刪成純脈絡）。回傳複述句預覽。與 humanizer-zh scripts/final_gate.py 同邏輯，
+    改一邊記得改另一邊。
     """
     def _bigrams(s: str) -> set:
         s = re.sub(r"[^一-鿿]", "", s)
@@ -803,11 +806,15 @@ def _redundant_narration(article: str) -> list:
         if not _is_quote_para(cur) or _is_quote_para(prev):
             continue
         quote = " ".join(re.findall(r"「([^「」]+)」", cur))
-        shared_nums = _nums(prev) & _nums(quote)
-        bp, bq = _bigrams(prev), _bigrams(quote)
-        jac = len(bp & bq) / max(1, len(bp | bq))
-        if len(shared_nums) >= 2 or jac >= 0.30:
-            hits.append(prev[:50])
+        qgrams, qnums = _bigrams(quote), _nums(quote)
+        narration = re.sub(r"「[^「」]*」", "", prev)
+        for sent in re.split(r"[。！？；]", narration):
+            sg = _bigrams(sent)
+            if len(sg) < 6:
+                continue
+            contain = len(sg & qgrams) / len(sg)
+            if contain >= 0.5 or len(_nums(sent) & qnums) >= 2:
+                hits.append(sent.strip()[:50])
     return hits
 
 
