@@ -182,6 +182,34 @@ def _fetch_transcript_via_ytdlp(video_id: str) -> tuple[str, str]:
     raise RuntimeError(f"影片 {video_id} 沒有可用的字幕（API 與 yt-dlp 均失敗）")
 
 
+def _fetch_transcript_via_whisper(
+    youtube_url: str, lang_hint: str | None = None
+) -> tuple[str, str]:
+    """字幕被 IP 封鎖或影片本身無字幕時的最終退路：下載音訊並用本地 Whisper 轉錄。
+
+    Apple Silicon 走 MLX。`lang_hint`（如 ja／ko／en，通常由輪巡頻道的 category
+    推導）會強制 Whisper 的解碼語言，避免自動偵測誤判把專名拆爛（日韓自動偵測尤易
+    出錯，見 みずほ→水ほ 之類）；留空則沿用自動偵測。音訊串流不受字幕端點的 IP
+    封鎖影響，故即使 timedtext 被擋、此路仍可用。回傳 (逐字稿, 語言)。
+    """
+    import tempfile
+
+    scripts_dir = str(Path(__file__).resolve().parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    import transcribe as _tx  # noqa: E402  同目錄，mlx 於函式內延遲載入
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        audio_base = str(Path(tmpdir) / "audio")
+        audio_path = _tx._download_audio(youtube_url, audio_base)
+        text, lang = _tx.transcribe(audio_path, lang_hint, "large-v3-turbo", "auto")
+
+    text = (text or "").strip()
+    if not text:
+        raise RuntimeError("Whisper 轉錄結果為空")
+    return text, (lang or "whisper")
+
+
 def _parse_vtt(vtt_text: str) -> str:
     """Strip VTT timestamps and tags, return plain transcript text."""
     lines = []
@@ -1216,12 +1244,19 @@ tags: {tags_yaml}
 # Main
 # ---------------------------------------------------------------------------
 
-def main(youtube_url: str, transcript_file: str | None = None) -> str:
+def main(
+    youtube_url: str,
+    transcript_file: str | None = None,
+    lang_hint: str | None = None,
+) -> str:
     """Full pipeline: URL → transcript → article → saved file.
 
     If transcript_file is given (e.g. a Whisper transcript for a video whose
     subtitles are disabled), it is used directly instead of fetching subtitles,
     and is also saved alongside the article as the cross-reference 原文字幕.
+
+    lang_hint（如 ja／ko／en）只在字幕不可用、落到本地 Whisper 轉錄時生效，用來
+    強制解碼語言、降低專名誤判；留空則自動偵測。
 
     Returns the path of the saved file.
     """
@@ -1238,15 +1273,29 @@ def main(youtube_url: str, transcript_file: str | None = None) -> str:
         print(f"      原文字幕: {len(en_transcript)} 字元（完整保留，不截斷）")
     else:
         print(f"[2/6] 抓取字幕...")
-        transcript, lang = fetch_transcript(video_id)
-        print(f"      字幕語言: {lang} | 長度: {len(transcript)} 字元")
-
-        print(f"[3/6] 儲存英文原文字幕...")
-        en_transcript = fetch_english_transcript(video_id) if lang != "en" else transcript
-        if en_transcript:
-            print(f"      英文字幕: {len(en_transcript)} 字元（完整保留，不截斷）")
+        try:
+            transcript, lang = fetch_transcript(video_id)
+        except Exception as cap_err:
+            # 字幕被 IP 封鎖或影片無字幕 → 自動改用本地 Whisper 轉錄（音訊不受封鎖）
+            print(
+                f"      ⚠️ 字幕取得失敗（{type(cap_err).__name__}），改用本地 Whisper 轉錄"
+                f"（下載音訊，可能數分鐘）...",
+                file=sys.stderr,
+            )
+            hint_note = f"（指定語言 {lang_hint}）" if lang_hint else "（語言自動偵測）"
+            print(f"[2/6] 字幕不可用，改用本地 Whisper 轉錄{hint_note}（下載音訊，可能數分鐘）...")
+            transcript, lang = _fetch_transcript_via_whisper(youtube_url, lang_hint)
+            print(f"      Whisper 逐字稿: {len(transcript)} 字元 | 語言: {lang}")
+            en_transcript = transcript
         else:
-            print(f"      無法取得英文字幕，跳過")
+            print(f"      字幕語言: {lang} | 長度: {len(transcript)} 字元")
+
+            print(f"[3/6] 儲存英文原文字幕...")
+            en_transcript = fetch_english_transcript(video_id) if lang != "en" else transcript
+            if en_transcript:
+                print(f"      英文字幕: {len(en_transcript)} 字元（完整保留，不截斷）")
+            else:
+                print(f"      無法取得英文字幕，跳過")
 
     print(f"[4/6] 取得影片資訊...")
     metadata = fetch_metadata(video_id)
@@ -1290,6 +1339,12 @@ if __name__ == "__main__":
         default=None,
         help="本地逐字稿 .txt（無字幕影片的 whisper fallback，跳過抓字幕步驟）",
     )
+    ap.add_argument(
+        "--lang",
+        default=None,
+        help="Whisper 轉錄語言（ja/ko/en…），僅在落到本地 Whisper fallback 時生效，"
+        "用來強制解碼語言、降低專名誤判；留空則自動偵測",
+    )
     cli_args = ap.parse_args()
-    result = main(cli_args.youtube_url, cli_args.transcript_file)
+    result = main(cli_args.youtube_url, cli_args.transcript_file, cli_args.lang)
     print(f"\n完成！文章已儲存至：{result}")

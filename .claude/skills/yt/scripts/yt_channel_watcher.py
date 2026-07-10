@@ -4,6 +4,7 @@ yt_channel_watcher.py
 自動輪巡 YouTube 頻道，對新影片執行 yt_to_article.py。
 每日排程執行，不依賴 Claude Code 是否在線。
 """
+from __future__ import annotations
 
 import json
 import re
@@ -147,10 +148,35 @@ def fetch_channel_videos(handle: str, lookback_days: int, max_videos: int,
     return videos
 
 
-def process_video(video_id: str, title: str) -> bool:
-    """呼叫 yt_to_article.py 處理單部影片，回傳是否成功。"""
+# 頻道 category 前綴 → Whisper 語言碼。只在落到本地 Whisper fallback（無字幕）時
+# 生效，強制解碼語言可大幅降低日韓專名誤判。未知/無前綴 → None（沿用自動偵測），
+# 故無語言前綴的 master channels.json 行為完全不變。
+_CATEGORY_LANG = {
+    "JP": "ja", "JA": "ja",
+    "KR": "ko", "KO": "ko",
+    "EN": "en",
+    "CN": "zh", "ZH": "zh", "TW": "zh",
+}
+
+
+def lang_from_category(category: str | None) -> str | None:
+    """從頻道 category（如 "JP/Markets"）取語言前綴並映射成 Whisper 語言碼。"""
+    if not category:
+        return None
+    prefix = category.split("/", 1)[0].strip().upper()
+    return _CATEGORY_LANG.get(prefix)
+
+
+def process_video(video_id: str, title: str, lang: str | None = None) -> bool:
+    """呼叫 yt_to_article.py 處理單部影片，回傳是否成功。
+
+    lang 若提供（由頻道 category 推導），會以 --lang 傳給下游，只在無字幕、
+    落到本地 Whisper 轉錄時生效。
+    """
     url = f"https://www.youtube.com/watch?v={video_id}"
     cmd = [sys.executable, str(ARTICLE_SCRIPT), url]
+    if lang:
+        cmd += ["--lang", lang]
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     try:
         result = subprocess.run(
@@ -159,7 +185,7 @@ def process_video(video_id: str, title: str) -> bool:
         )
         # 撈出翻譯修補 pass 的觸發紀錄（日韓來源殘留假名/諺文時才有），成功也記
         for line in (result.stderr or "").splitlines():
-            if "翻譯修補 pass" in line or "修補後降為" in line:
+            if "翻譯修補 pass" in line or "修補後降為" in line or "改用本地 Whisper 轉錄" in line:
                 log(f"    {line.split(']', 1)[-1].strip() or line.strip()}")
         if result.returncode == 0:
             return True
@@ -215,7 +241,8 @@ def main():
         name = ch["name"]
         handle = ch["handle"]
         mpc = ch.get("max_per_channel", max_per_channel)
-        log(f"\n📡 {name} ({handle})")
+        ch_lang = lang_from_category(ch.get("category"))
+        log(f"\n📡 {name} ({handle})" + (f" · Whisper 語言={ch_lang}" if ch_lang else ""))
 
         videos = fetch_channel_videos(handle, lookback_days, mpc, lookback_hours)
         if not videos:
@@ -247,7 +274,7 @@ def main():
             title = v["title"][:60]
             dur_min = v["duration_seconds"] // 60
             log(f"  ▶ [{dur_min}min] {title}")
-            success = process_video(vid, title)
+            success = process_video(vid, title, ch_lang)
             if success:
                 processed["video_ids"].add(vid)
                 processed["titles"].add(normalize_title(v["title"]))
