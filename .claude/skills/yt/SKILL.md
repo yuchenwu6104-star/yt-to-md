@@ -27,10 +27,11 @@ python "<skill-path>/scripts/yt_to_article.py" "<YouTube URL>"
 
 腳本會自動：
 1. 解析 URL 提取 video_id
-2. 用 `youtube-transcript-api` 抓取字幕（優先：zh-TW → zh → en → 任何可用）
+2. 用 `youtube-transcript-api` 抓取字幕（優先：zh-TW → zh → en → 任何可用；字幕不可用時自動退到本地 Whisper 轉錄）
 3. 用 `yt-dlp --dump-json` 取得影片 metadata（標題、頻道、日期）
-4. 將字幕 + metadata 送入 MiniMax M3 API，生成結構化的深度洞察文章
+4. 將字幕 + metadata 送入 MiniMax M3 API，生成結構化的深度洞察文章。長逐字稿依語言切段（中文 ~12k、英文 ~20k、日韓 ~18k 字元／段），確保每段有足夠輸出空間全覆蓋、不跳段
 5. 格式化為 markdown（含 YAML frontmatter）並存入 Obsidian vault
+6. **原文逐字稿一律另存 `<檔名>_transcript.txt`**（humanizer 對帳的 ground truth）；stderr 的 `[note]` 警告（專名查無、串接複述、覆蓋率偏低）要轉交 humanizer 處理
 
 ### Step 2: 確認結果
 
@@ -46,7 +47,7 @@ python "<skill-path>/scripts/yt_to_article.py" "<YouTube URL>"
 
 ## 輸出格式
 
-文章存入：`C:\Users\wukee\OneDrive\文件\Obsidian Vault\投資筆記\每週總結\每日研究`
+文章存入：`.env` 的 `YT_OUTPUT_DIR`（本機為 `/Users/slking/Documents/Obsidian Vault/投資筆記/每週總結/每日研究`）
 
 檔名格式：`YYYY-MM-DD_yt_頻道名_主題關鍵字.md`
 
@@ -91,4 +92,4 @@ tags: [標籤]
 
 - **無字幕**：告知用戶該影片沒有可用字幕，建議選擇有字幕的影片
 - **API 失敗**：檢查 API key 是否正確、餘額是否充足
-- **字幕太長**：自動截斷至 60,000 字元，不影響文章品質
+- **字幕太長**：自動依語言切段多次生成後合併（不是截斷）；單段 60,000 字元只是最後安全網

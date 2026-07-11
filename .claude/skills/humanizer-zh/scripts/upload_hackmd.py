@@ -35,6 +35,44 @@ def load_env_token() -> str:
     return token
 
 
+def _quality_gate(file_path: Path) -> None:
+    """_yt_ 成品上傳前的品質關卡（無 bypass，這是設計）。
+
+    兩個條件缺一不可，否則直接拒絕上傳：
+    1. final_gate.py [硬性] 清零（機械規則：破折號、報幕詞、外語殘留、meta 洩漏…）
+    2. 同名 `_audit.md` 交付證據檔存在（覆蓋對帳表、引述回對、專名核對等七項——
+       證據落檔才能區分「查過沒漏」與「沒查」；2026-07-11 停損王篇教訓：
+       humanizer 表層修完就交件，意思反轉與 10 條漏段全靠事後盲審才撈回來）
+
+    只擋 `_yt_*_humanized.md`；其他檔案（fb/invest/epub）維持原行為。
+    """
+    if "_yt_" not in file_path.name or not file_path.name.endswith("_humanized.md"):
+        return
+    import subprocess
+
+    gate = Path(__file__).resolve().parent / "final_gate.py"
+    r = subprocess.run(
+        [sys.executable, str(gate), str(file_path)],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        hard = "\n".join(l for l in r.stdout.splitlines() if l.startswith("[硬性]"))
+        sys.exit(
+            "拒絕上傳：final_gate [硬性] 未清零。回去修到重跑無輸出，不要嘗試繞過。\n"
+            + (hard or r.stdout[-500:])
+        )
+    audit = file_path.with_name(
+        file_path.name[: -len("_humanized.md")] + "_audit.md"
+    )
+    if not audit.exists() or len(audit.read_text(encoding="utf-8").strip()) < 200:
+        sys.exit(
+            f"拒絕上傳：交付證據檔不存在或過短（{audit.name}）。\n"
+            "依 humanizer-zh SKILL.md「交付清單」，七項證據（修改清單、引述回對表、"
+            "專名核對表、數字對帳、歸屬核對、朗讀證據、串接複述掃描）加覆蓋對帳表"
+            "必須先落檔為 _audit.md 才可上傳。沒有清單＝沒查，回去補做。"
+        )
+
+
 def extract_title(content: str, fallback: str) -> str:
     for line in content.splitlines():
         m = re.match(r"^#\s+(.+)$", line.strip())
@@ -55,6 +93,8 @@ def main() -> None:
     file_path = Path(args.file)
     if not file_path.exists():
         sys.exit(f"檔案不存在：{file_path}")
+
+    _quality_gate(file_path)
 
     content = file_path.read_text(encoding="utf-8")
     title = args.title or extract_title(content, file_path.stem)

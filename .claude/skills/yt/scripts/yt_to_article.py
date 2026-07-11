@@ -362,6 +362,14 @@ SYSTEM_PROMPT = """\
 - **公司/機構名**：有公認中文名的用「中文（English）」，例如「台積電（TSMC）」「輝達（Nvidia）」。沒有公認中文名的直接用英文，例如「Amkor」「ASE」。
 - **技術名詞**：保留英文原名，可在首次出現時加中文解釋，例如「CoWoS（Chip on Wafer on Substrate，一種 2.5D 封裝技術）」。之後直接用英文縮寫。
 - **絕對禁止**：不要把英文專有名詞硬翻成中文音譯。寧可保留英文，也不要創造讀者看不懂的音譯。
+- ⚠️ **把字幕裡的近似拼字「修正」成一個真實存在的專名，不等於修對**：先問講者語境需要的是機構名、產品名，還是普通詞。例如字幕寫「IMREC」而語境在講機櫃內的銅互連，那是 in-rack（機櫃內），不是研究機構 IMEC；改成 IMEC 句子直接變錯。沒把握時保留字幕原拼法。
+
+## 字幕品質與 ASR 錯誤處理（自動字幕與 Whisper 逐字稿必讀）
+
+逐字稿常是無標點的語音辨識輸出，同音錯字是常態。處理規則：
+- **中文同音亂詞**：依語境重建最合理的原話（「尻受症」→重訓、「同價」→銅價、「210 億」在講美股股價時是 210 美元）。重建沒把握的，保留原字，**嚴禁把不知所云的亂碼直接寫進文章**（「在有受訓加速的狀況下」這種中文不通的句子就是沒處理的證據）
+- **數字量級**：million＝百萬、billion＝十億、trillion＝兆；中文語音辨識常把量級聽錯，寫進文章前把同段數字放在一起檢查一次合理性
+- **引述內的省略號「……」只能省略同一段連續發言裡的枝節**：嚴禁把逐字稿不同位置、不同話題的句子拼進同一個「」引述——省略後主詞或指涉對象變了就是變造原話
 
 ## 翻譯品質（當原始字幕非中文時——英文、日文、韓文等——此節極為重要）
 
@@ -457,8 +465,17 @@ SYSTEM_PROMPT = """\
 - 不要用「首先...其次...第三」的三段式結構
 - ⚠️ 結語只准總結正文已經出現的內容，嚴禁引入正文沒有的數據、主題或論點。結語提到的每個事實都必須能在上文找到；想放進結語的內容若正文沒有，先回頭補正文段落，不要只在結語出現。
 
+### 覆蓋鐵則（與格式鐵則同級，漏段＝失敗）
+- 文章要沿著逐字稿的順序推進，**禁止跳過逐字稿中任何一段連續內容（粗略 500 字以上）完全不處理**。次要內容（寒暄、廣告、與主題無關的閒聊）可以一句帶過或不寫，但講者任何有實質內容的論述段都必須在文章中有對應
+- 四種內容**必收、禁止當枝節丟掉**（它們最常被摘要模型刪掉，卻最影響讀者判讀）：
+  1. 講者的個人部位／利益揭露（「我早就下車了」「我自己沒有投入資金」「這是業配／不是業配」）
+  2. 反方例證與迷思澄清（講者說「大家以為 X，但其實是資訊落差」之類）
+  3. 時事背景（某政策研議中、某事件剛發生——沒有它，講者的評論會懸空）
+  4. 具體標的名、數據、時間表
+- 結尾的聽眾 QA 若含投資或產業內容，每題都要處理；純娛樂互動可略
+
 ### 格式規範
-- 總字數：3000-8000 字（視原始內容長度而定，寧可多寫也不要遺漏重要觀點）
+- 總字數：**跟著逐字稿的內容量走，不設上限，寧長勿刪**。逐字稿內容密集時文章自然會長，禁止為了控制篇幅而砍論點或壓縮引述；內容單薄時也不要灌水
 - 不要使用粗體標記短語或概念。只在數據列表中使用粗體（例如指數名稱、金額）
 - 講者原話用「」呈現，不使用 > 引用塊（引用塊保留給編者評論或特別重要的一句話摘要）
 
@@ -732,6 +749,15 @@ def format_violations(article: str) -> list:
         issues.append(f"{dupes} 個長段落重複出現（疑似內容拼接異常）")
     # 串接區舞台指示／替講者語氣打分（引號內講者原話豁免：先剔除「」再檢查）
     narration = re.sub(r"「[^「」]*」", "", article)
+    # 分段後台資訊滲入成稿（chunk meta 洩漏）：模型把 part_info 的分段說明寫進文章
+    meta_leak = re.search(
+        r"逐字稿的(?:第[一1壹\d]|最後一|中間)段|後續段落|具體內容要等|這是完整逐字稿",
+        narration,
+    )
+    if meta_leak:
+        issues.append(
+            f"文章洩漏分段後台資訊（出現「{meta_leak.group(0)}」，嚴禁提及逐字稿分段或預告未見內容）"
+        )
     # 報幕用語：描寫對話的動作／節奏／戲劇性，使用者明令零容忍、最常復發
     stage_phrases = (
         "補了一句", "補了一個", "補一句", "補一刀", "補了一刀",
@@ -888,6 +914,23 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
                 + "；".join(f"「{r}…」" for r in red[:6]) + ("…" if len(red) > 6 else ""),
                 file=sys.stderr,
             )
+        # 覆蓋率粗檢：成文 CJK 字數對逐字稿的比例太低＝疑似大幅跳段。純警告，
+        # 供 humanizer 覆蓋對帳（處理流程第 3 步）加嚴。門檻校準：股癌篇漏一半時
+        # 中文比例 0.28；正常全覆蓋中文應 ≥0.35，英文來源約 ≥0.08（字→詞換算）。
+        if transcript and result:
+            art_cjk = len(re.findall(r"[一-鿿]", result.get("article", "")))
+            src_cjk = len(re.findall(r"[一-鿿]", transcript))
+            if src_cjk > len(transcript) * 0.3:
+                ratio, floor = art_cjk / max(src_cjk, 1), 0.35
+            else:
+                ratio, floor = art_cjk / max(len(transcript), 1), 0.08
+            if ratio < floor:
+                print(
+                    f"[note] 覆蓋率偏低：成文 {art_cjk} CJK 字 vs 逐字稿 {len(transcript)} 字元"
+                    f"（比例 {ratio:.2f}，門檻 {floor}），疑似大幅跳段。"
+                    "humanizer 覆蓋對帳請逐主題嚴查並補回。",
+                    file=sys.stderr,
+                )
         return result
 
     MAX_ATTEMPTS = 3
@@ -1115,37 +1158,53 @@ def _repair_translation(article: str, metadata: dict) -> "str | None":
         return None
 
 
+def _chunk_target_for(transcript: str) -> int:
+    """依來源語言決定單次 MiniMax 呼叫的逐字稿長度上限。
+
+    實測教訓（2026-07-11）：M3 的輸出預算（max_tokens 16384）撐不起大 chunk 的
+    完整覆蓋——股癌 20.7k 中文單次呼叫只承載一半論點、Gavin Baker 2×33k 英文掉了
+    8 個主題段。chunk 一大，模型必然壓縮取捨，「跳段偷懶」是結構性結果，不是
+    prompt 勸得回來的。切小段讓每段的成文空間充裕，才能做到全覆蓋。
+    """
+    if len(_KANA_HANGUL_RE.findall(transcript)) >= 200:
+        return 18_000          # 日韓來源（原有校準）
+    cjk = len(re.findall(r"[一-鿿]", transcript))
+    if cjk > len(transcript) * 0.3:
+        return 12_000          # 中文來源：資訊密度高（字＝詞），切最小
+    return 20_000              # 英文等其他來源
+
+
 def generate_article(transcript: str, metadata: dict) -> dict:
-    """生成文章。長逐字稿拆成多次 MiniMax 呼叫；日韓來源用較小的分段
-    （短段落能讓 M3 不偷懶整段照貼原文）。最後對殘留假名／諺文做翻譯修補。"""
-    # 來源語言偵測：原始逐字稿含大量假名／諺文 → 日韓來源
-    is_jp_kr = len(_KANA_HANGUL_RE.findall(transcript)) >= 200
-    # 分段目標字數：日韓來源切小段（~18k），英／中維持原本 60k 門檻
-    chunk_target = 18_000 if is_jp_kr else MAX_TRANSCRIPT_CHARS
+    """生成文章。長逐字稿拆成多次 MiniMax 呼叫；chunk 大小依語言校準
+    （見 _chunk_target_for）。最後對殘留假名／諺文做翻譯修補。"""
+    chunk_target = _chunk_target_for(transcript)
     n_parts = ((len(transcript) - 1) // chunk_target + 1) if transcript else 1
-    n_parts = max(1, min(n_parts, 5))
+    n_parts = max(1, min(n_parts, 8))
 
     if n_parts == 1:
         result = call_minimax(transcript, metadata)
     else:
-        print(f"      字幕共 {len(transcript)} 字元"
-              f"{'（日韓來源，切小段）' if is_jp_kr else f'，超過 {MAX_TRANSCRIPT_CHARS}'}"
-              f"，拆為 {n_parts} 段...")
+        print(f"      字幕共 {len(transcript)} 字元（chunk 上限 {chunk_target}），拆為 {n_parts} 段...")
         segments = _split_into_n(transcript, n_parts)
         n = len(segments)
+        # 分段是後台資訊，嚴禁滲入成稿：2026-07-11 停損王篇 M3 曾把「因為這是逐字稿
+        # 的第一段，具體內容要等後續段落才會揭曉」寫進文章還自行推測未見的內容。
+        meta_ban = ("⚠️ 分段是後台資訊：文章裡嚴禁提及「逐字稿」「分段」「第 N 段」"
+                    "「後續段落」等字眼（講者親口說的除外），嚴禁替你沒看到的段落"
+                    "寫預告或推測內容——只寫這段逐字稿裡實際有的東西。")
         chunks = []
         for i, seg in enumerate(segments):
             if i == 0:
                 info = (f"【重要】這是完整逐字稿的第 1 段（共 {n} 段）。請正常撰寫文章，"
-                        "包含導言和正文段落。不要寫結語，後續段落會接在你的輸出之後。")
+                        "包含導言和正文段落。不要寫結語，後續段落會接在你的輸出之後。" + meta_ban)
             elif i == n - 1:
                 info = (f"【重要】這是完整逐字稿的最後一段（第 {i+1}／{n} 段）。請直接從新的 "
                         "## 段落標題開始，不要重複導言、不要再次介紹講者；可以寫結語。"
-                        "這些內容會接在前面段落之後。")
+                        "這些內容會接在前面段落之後。" + meta_ban)
             else:
                 info = (f"【重要】這是完整逐字稿的中間段（第 {i+1}／{n} 段）。請直接從新的 "
                         "## 段落標題開始，不要導言、不要結語、不要重複介紹講者。"
-                        "這些內容會接在前面段落之後。")
+                        "這些內容會接在前面段落之後。" + meta_ban)
             chunks.append(call_minimax(seg, metadata, part_info=info))
             print(f"      第 {i+1}/{n} 段完成")
 
@@ -1297,12 +1356,12 @@ def main(
         else:
             print(f"      字幕語言: {lang} | 長度: {len(transcript)} 字元")
 
-            print(f"[3/6] 儲存英文原文字幕...")
-            en_transcript = fetch_english_transcript(video_id) if lang != "en" else transcript
-            if en_transcript:
-                print(f"      英文字幕: {len(en_transcript)} 字元（完整保留，不截斷）")
-            else:
-                print(f"      無法取得英文字幕，跳過")
+            print(f"[3/6] 保留原文字幕供對帳...")
+            # 一律保存「實際餵給模型」的原文逐字稿：它才是 humanizer 對帳的
+            # ground truth。舊邏輯只存英文軌，中／日／韓來源沒有英文軌時
+            # _transcript.txt 根本不會落地，humanizer 連對帳材料都沒有。
+            en_transcript = transcript
+            print(f"      原文字幕: {len(en_transcript)} 字元（完整保留，不截斷）")
 
     print(f"[4/6] 取得影片資訊...")
     metadata = fetch_metadata(video_id)

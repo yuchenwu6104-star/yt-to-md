@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""交付前機械清掃閘門（humanizer-zh 處理流程第 12 步 c）。
+"""交付前機械清掃閘門（humanizer-zh 處理流程第 13 步 c）。
 
 用法：python3 final_gate.py <文章路徑>
 
@@ -34,6 +34,10 @@ TONE_WORDS = (
     "暗示了", "透露了",
 )
 NONNEUTRAL_VERBS = ("坦言", "坦承", "直言", "不諱言", "爆料")
+# /yt 分段後台資訊滲入成稿（chunk meta 洩漏）；引號內講者原話豁免
+META_LEAK_RE = re.compile(
+    r"逐字稿的(?:第[一1壹\d]|最後一|中間)段|後續段落|具體內容要等|這是完整逐字稿"
+)
 EDITORIAL_RE = re.compile(r"(?:很|相當|非常|十分|更)(?:直接|直白)")
 DASH_RE = re.compile(r"[—–]")
 REFRAME_RE = re.compile(r"而是|並非|而在於|與其說|表面上|更深層|你以為|看似|真正的")
@@ -89,6 +93,94 @@ def restatement_candidates(paras: list) -> list:
     return hits
 
 
+_ENTITY_STOPWORDS = frozenset({
+    "the", "and", "for", "with", "that", "this", "from", "into", "your",
+    "ai", "agi", "ml", "llm", "llms", "gpu", "gpus", "cpu", "tpu", "api", "apis",
+    "ceo", "cfo", "cto", "coo", "gdp", "ipo", "etf", "roi", "kpi", "okr",
+    "saas", "b2b", "b2c", "iot", "faq", "crm", "erp", "seo", "vc", "pe",
+    "usa", "us", "uk", "eu", "un", "ok", "ux", "ui", "ev", "evs", "vr", "ar",
+    "q1", "q2", "q3", "q4", "r&d", "ceos", "cios", "kyc", "wto", "wef",
+    "youtube", "podcast", "podcasts", "inferencing", "token", "tokens",
+    "margin", "floor", "double", "down", "reasoning", "scale", "out", "across",
+    "wide", "slow", "narrow", "fast", "lead", "time",
+})
+
+
+def _find_transcript(article_path: str) -> "str | None":
+    """自動尋找同名 `_transcript.txt`（與 SKILL.md 處理流程第 2 步同規則）。
+    `xxx_humanized.md` 與 `xxx.md` 都對應 `xxx_transcript.txt`。"""
+    import os
+    base = re.sub(r"\.md$", "", article_path)
+    base = re.sub(r"_humanized$", "", base)
+    p = base + "_transcript.txt"
+    if os.path.exists(p):
+        return open(p, encoding="utf-8").read()
+    return None
+
+
+def transcript_checks(article: str, transcript: str) -> "tuple[list, list]":
+    """拿字幕當 ground truth 的機械檢查。回傳 (hard, soft)。
+
+    1. 覆蓋率粗檢（[候選]）：成文 CJK 字數對逐字稿比例過低＝疑似漏段，
+       覆蓋對帳（處理流程第 3 步）必須逐主題補查。
+    2. 英文專名交叉核對（[候選]）：文章裡的英文專名在字幕完全對不上（含模糊
+       比對），可能是捏造、也可能是把聽錯的字修成錯的專名（IMREC→IMEC 案）。
+       與 /yt yt_to_article.py 的 _fabricated_english_entities 同源簡化版。
+    """
+    import difflib
+    hard, soft = [], []
+
+    art_cjk = len(re.findall(r"[一-鿿]", article))
+    src_cjk = len(re.findall(r"[一-鿿]", transcript))
+    if src_cjk > len(transcript) * 0.3:
+        ratio, floor = art_cjk / max(src_cjk, 1), 0.35
+    else:
+        ratio, floor = art_cjk / max(len(transcript), 1), 0.08
+    if ratio < floor:
+        soft.append(
+            f"覆蓋率偏低（第 3 步覆蓋對帳加嚴）｜全文｜成文 {art_cjk} CJK 字 vs "
+            f"逐字稿 {len(transcript)} 字元，比例 {ratio:.2f} < 門檻 {floor}，疑似漏段"
+        )
+
+    tl = transcript.lower()
+    twords = set(re.findall(r"[a-z0-9]+", tl))
+    tl_squashed = re.sub(r"[^a-z0-9]", "", tl)
+    # frontmatter 的 channel／video_title 是已知 metadata，其 token 一律豁免
+    exempt = set()
+    fm = re.match(r"\A---\n(.*?)\n---\n", article, flags=re.DOTALL)
+    if fm:
+        for m in re.finditer(r'(?m)^(?:channel|video_title):\s*"?(.+?)"?\s*$', fm.group(1)):
+            exempt.update(re.findall(r"[a-z0-9]+", m.group(1).lower()))
+    body = re.sub(r"\A---\n.*?\n---\n", "", article, count=1, flags=re.DOTALL)
+    body = re.sub(r"https?://\S+", "", body)
+    scan = "\n".join(l for l in body.splitlines() if "原始影片" not in l)
+    seen = set()
+    for tok in re.findall(r"[A-Z][A-Za-z0-9]*(?:[-'.&][A-Za-z0-9]+)*", scan):
+        norm = tok.lower()
+        bare = re.sub(r"[-'.&]", "", norm)
+        if norm in seen or len(bare) < 4 or norm in _ENTITY_STOPWORDS:
+            continue
+        seen.add(norm)
+        if norm in exempt or bare in exempt:
+            continue
+        if norm in tl or bare in tl_squashed:
+            continue
+        parts = [p for p in re.split(r"[-'.&]", norm) if p]
+        if parts and all(p in tl for p in parts):
+            continue
+        best = max(
+            (difflib.SequenceMatcher(None, bare, w).ratio()
+             for w in twords if abs(len(w) - len(bare)) <= 2),
+            default=0.0,
+        )
+        if best >= 0.80:
+            continue
+        soft.append(
+            f"英文專名字幕查無（查證講者意圖，勿只查『詞存不存在』）｜｜{tok}"
+        )
+    return hard, soft
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -114,6 +206,9 @@ def main() -> int:
         m = EDITORIAL_RE.search(stripped)
         if m:
             hard.append(f"語氣打分｜L{n}｜「{m.group(0)}」：{stripped.strip()[:50]}")
+        m = META_LEAK_RE.search(stripped)
+        if m:
+            hard.append(f"分段後台資訊洩漏｜L{n}｜「{m.group(0)}」：{stripped.strip()[:50]}")
         m = REFRAME_RE.search(stripped)
         if m:
             soft.append(f"重新框定句型（模式9/35，三分類）｜L{n}｜「{m.group(0)}」：{stripped.strip()[:50]}")
@@ -133,6 +228,15 @@ def main() -> int:
         hard.append(f"整段重複｜｜{d}…")
     for r in restatement_candidates(paras):
         soft.append(f"串接複述候選（模式33，逐對遮字測試）｜｜{r}…")
+
+    transcript = _find_transcript(sys.argv[1])
+    if transcript:
+        t_hard, t_soft = transcript_checks(text, transcript)
+        hard.extend(t_hard)
+        soft.extend(t_soft)
+    else:
+        soft.append("找不到同名 _transcript.txt｜｜無法做覆蓋率與專名交叉核對，"
+                    "確認字幕檔存在或於交付清單註明")
 
     for item in hard:
         print(f"[硬性] {item}")
