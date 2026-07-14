@@ -27,6 +27,8 @@ STAGE_PHRASES = (
     "笑著接", "順著接", "馬上搭腔", "馬上吐槽", "再補一刀",
     "把方向拉回", "把梗接到", "話鋒一轉", "切入核心",
     "苦笑著說", "笑著說", "笑說", "打趣", "搶話",
+    "開門見山", "先解釋為什麼", "點出另外",
+    "另一個更即時的問題", "她的重點是", "他的重點是",
 )
 TONE_WORDS = (
     "尖銳", "犀利", "一針見血", "毫不留情", "不留情面", "不客氣",
@@ -67,30 +69,49 @@ def _is_quote_para(p: str) -> bool:
     return bool(qs) and sum(len(x) for x in qs) > len(p) * 0.5
 
 
-def restatement_candidates(paras: list) -> list:
-    """逐句版串接複述偵測（模式 33）。
+def representative_quote_coverage(article: str) -> tuple[int, int]:
+    """Count main sections containing a substantive translated direct quote."""
+    sections = re.split(r"(?m)^##\s+", article)[1:]
+    main_sections = []
+    for section in sections:
+        heading = section.splitlines()[0].strip() if section.splitlines() else ""
+        if heading in {"導言", "結語"}:
+            continue
+        main_sections.append(section)
+    covered = 0
+    for section in main_sections:
+        quotes = re.findall(r"「([^「」]+)」", section)
+        if any(len(re.findall(r"[一-鿿]", quote)) >= 30 for quote in quotes):
+            covered += 1
+    return covered, len(main_sections)
 
-    與 /yt 的 _redundant_narration 同邏輯：串接段按句切開，任一句的 CJK 2-gram
-    過半被緊接引述涵蓋、或與引述共用 ≥2 個帶單位數字，即為複述候選。逐句而非
-    整段，是為了抓混血串接（一句複述焊在有合法背景的段落裡，整段比對會被稀釋）。
+
+def restatement_candidates(paras: list) -> list:
+    """逐句版引述前預告與引述後解說偵測（模式 33）。
+
+    與 /yt 的 _redundant_narration 同邏輯：逐句比較引述前後相鄰敘述，任一句的
+    CJK 2-gram 過半被引述涵蓋、或與引述共用至少兩個帶單位數字，即為複述候選。
     """
     hits = []
-    for i in range(1, len(paras)):
-        cur, prev = paras[i], paras[i - 1]
-        if cur.startswith("#") or prev.startswith("#"):
-            continue
-        if not _is_quote_para(cur) or _is_quote_para(prev):
+    for i, cur in enumerate(paras):
+        if cur.startswith("#") or not _is_quote_para(cur):
             continue
         quote = " ".join(re.findall(r"「([^「」]+)」", cur))
         qgrams, qnums = _bigrams(quote), _nums(quote)
-        for sent in re.split(r"[。！？；]", _strip_quotes(prev)):
-            sg = _bigrams(sent)
-            if len(sg) < 6:
-                continue
-            contain = len(sg & qgrams) / len(sg)
-            if contain >= 0.5 or len(_nums(sent) & qnums) >= 2:
-                hits.append(sent.strip()[:60])
-    return hits
+        neighbors = []
+        if i > 0 and not paras[i - 1].startswith("#") and not _is_quote_para(paras[i - 1]):
+            neighbors.append(("引述前", paras[i - 1]))
+        if i + 1 < len(paras) and not paras[i + 1].startswith("#") and not _is_quote_para(paras[i + 1]):
+            neighbors.append(("引述後", paras[i + 1]))
+        for position, paragraph in neighbors:
+            for sent in re.split(r"[。！？；]", _strip_quotes(paragraph)):
+                sg = _bigrams(sent)
+                if len(sg) < 6:
+                    continue
+                contain = len(sg & qgrams) / len(sg)
+                if contain >= 0.5 or len(_nums(sent) & qnums) >= 2:
+                    hits.append(f"{position}：{sent.strip()[:55]}")
+    return list(dict.fromkeys(hits))
 
 
 _ENTITY_STOPWORDS = frozenset({
@@ -227,7 +248,18 @@ def main() -> int:
     for d in dupes:
         hard.append(f"整段重複｜｜{d}…")
     for r in restatement_candidates(paras):
-        soft.append(f"串接複述候選（模式33，逐對遮字測試）｜｜{r}…")
+        soft.append(f"引述前後複述候選（模式33，逐對遮字測試）｜｜{r}…")
+
+    quote_sections, main_sections = representative_quote_coverage(body)
+    required_quote_sections = min(
+        main_sections,
+        max(1, (main_sections + 1) // 2),
+    )
+    if main_sections and quote_sections < required_quote_sections:
+        hard.append(
+            f"講者聲音不足｜全文｜只有 {quote_sections}/{main_sections} 個主要章節含實質直接引述，"
+            f"至少需要 {required_quote_sections} 個；這是章節覆蓋下限，不是引述字數配額"
+        )
 
     transcript = _find_transcript(sys.argv[1])
     if transcript:

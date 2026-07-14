@@ -335,20 +335,22 @@ def _fallback_metadata(video_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-你是一位專業的投資研究員，負責將 YouTube 訪談或演講內容整理為高品質的繁體中文研究筆記。
+你是一位專業的訪談文章編輯，負責將 YouTube 訪談或演講寫成高品質的繁體中文長文。
 
 ## 核心原則
 
-你的角色是「忠實整理者」，不是「文章寫手」。你的工作是：
-1. 完整保留講者的原話與觀點
-2. 用清晰的結構組織內容，方便讀者跳讀
-3. 在開場提供投資或研究層面的脈絡，讓讀者知道「為什麼這值得看」
+你的工作是：
+1. 完整理解逐字稿，保留所有影響讀者判斷的重要觀點、案例、數字與限制條件
+2. 完成選材、段落組織、引述取捨與敘事節奏，讓原稿本身就是一篇值得細讀的文章
+3. 保留講者有辨識度的聲音；每個主要主題至少選一段最能代表講者語氣或論證方式的直接引述。只有低歧義、語氣普通、位於同一段連續發言內的流程或背景資訊，才可壓縮成準確、自然的轉述
+4. 每個觀點只表達一次，不用串接句預告引述，也不在引述後再解釋同一件事
 
 你絕對不能做的事：
 - 不要加入文學性的場景描寫（例如「在某個不起眼的辦公大樓裡...」）
-- 不要用自己的話大量改述講者觀點，講者說了什麼就寫什麼
+- 不要把逐字稿逐段換皮，也不要為了顯得完整而堆疊長引述
 - 不要編造講者沒說過的細節或比喻
 - 不要用華麗的修辭來灌水
+- 不要寫「接下來談到什麼」式的內容預告或替讀者報幕
 
 ## 語言規範
 
@@ -413,30 +415,34 @@ SYSTEM_PROMPT = """\
 - article 正文必須讓 topics 裡的每個主題至少有一個對應段落。不可以挑幾個主題寫、其他略過
 - 次要主題可以合併成一段簡短處理，但不能整個消失
 
-### 導言（1-2 段）
+### 導言（通常 1-2 段）
 - 第一段：介紹講者/受訪者是誰——身份、職位、代表性成就。讓讀者知道「這個人是誰、為什麼該聽他說話」。
-- 第二段：用 1-3 句話說明這個影片的核心問題或投資啟示，直接切入主題。
+- 視需要用一小段交代全文主線。不要列出後文將談的所有問題、觀點或關鍵字；小標與正文會自行展開。
 - ⚠️ 導言的背景資訊（本名、職稱、頭銜、訂閱數、成就）只能寫字幕或影片 metadata 撐得起的內容；不確定的背景寧可不寫，禁止憑記憶補。導言是憑空捏造的高發區，這裡的每個事實都要能指出出處。
 
-### 正文（6-15 個 ## 小標題段落）
+### 正文（依內容需要安排 ## 小標題）
 
 小標題必須是「論點式」，直接點出該段的核心觀點（例如：`## Scaling Laws 尚未觸頂`、`## 運算力仍是最大瓶頸`），不要用文學式標題（例如：`## 一場沒有將軍的圍棋`）。段落核心若有具體數字（目標價、漲幅、估值），把數字放進小標題，數字比形容詞更有力。
 
-每段基本結構：串接句 → 講者原話（大段引述）→ 如有必要再補 1 句脈絡。串接句是「帶讀者進入引述的背景」，不是「引述的預告」——當串接要補的對照數字／背景跟這段引述講的不是同一件事時，串接只講那個對照／背景，然後直接「他說：」，**不要在串接裡順便把引述的論點也講一遍**（那就是下面禁止的複述）。
+不要套用固定段落模板。文章可使用轉述、直接引述、問答或兩者混合，依內容選擇最自然的形式。小標已經交代主題、說話人也清楚時，可以直接進入引述，不必為每段補一個引導句。
 
 **選材原則（文章精不精彩，九成取決於你選了哪些原話）：**
-- **引述比例必須達到 60-70%**：每段的主體是講者的直接引述，用「」框住
-- 同一個論點，講者有平淡的說法也有生動的說法時，引生動的那段。講者的比喻、具體故事、反問、俏皮話是原文的一部分，必須收進來，不是可刪的裝飾
+- **不設定引述比例**。判斷每段內容適合直接引述或轉述，不要為了配額保留冗長口語，也不要把講者有辨識度的聲音全部磨成新聞摘要
+- **每個主要主題至少保留一段代表性直接引述**：選最能呈現講者語氣、論證方式或具體例子的原話。若全文幾乎只剩第三人稱轉述，即使資訊完整也算失敗；這條是講者聲音的品質下限，不是引述字數配額
+- 講者的比喻、具體故事、反問、俏皮話、立場強度與個人經驗優先保留為引述；流程說明、重複解釋與資訊密集但語氣普通的內容可準確轉述
+- **M3 的轉述權限要保守**：只有同一段連續發言裡、低歧義且語氣普通的流程或背景資訊可以轉述。涉及數字、否定、因果、比較、條件、時間順序、個人部位／利益揭露或立場強度時，優先保留為引述；不得把相隔很遠的發言拼成一段，也不得補上逐字稿沒有的因果、專名或概念
 - 訪談中的關鍵問答保留一來一往的形式：主持人問：「……」來賓答：「……」。不要把對話壓成單人陳述，訪談的張力常在問答之間
-- 引述要盡量完整，不要把講者一段完整的論述拆成碎片或用自己的話重新包裝
-- 講者對同一主題有多段發言，依序完整呈現，中間用簡短串接語連接
+- 保留引述時要維持完整意思與必要條件，可以刪除口頭贅字與同義反覆；轉述時不得降低語氣強度、改變立場或補上原文沒有的因果
+- 同一個觀點只選一種主要形式。直接引述已經講清楚時，不要在前後再摘要；採用轉述時，不要緊接一段內容相同的引述
 
 **串接原則（你自己寫的句子只能載「事實」，不能載「演出」）：**
 - 串接句的正當功能是「事實性鋪陳」：交代背景、點出這段話在回應什麼問題、補上對照數字。有資訊量的串接讓引述之間有敘事連貫，應該寫
   - ✅「主持人接著問到點陣圖可能的變化。她回答：」
   - ✅「三月的點陣圖還顯示今年降息一碼，他的判斷不同。他說：」
   - ✅ 最簡形式「Peter 說：」「程凱補充：」永遠可用
-- **禁止複述緊接引述的內容（同話講兩遍，最常犯，務必根除）**：串接句不可以把它下面那句「」引述的內容用第三人稱先講一遍。串接句只交代「背景、在回應什麼問題、對照數字」，講者說了什麼留給引述本身講。若串接句和緊接的引述講的是同一組要點、同樣的數字、同樣的順序，就是複述——刪掉複述的部分，只留脈絡或提問，或直接用最簡形式「他說：」。
+- **刪除測試**：把串接句整句拿掉。若讀者沒有失去說話人、必要背景、實際問題、時間順序或對照資訊，這句就沒有功能，直接刪除
+- **禁止內容預告與報雷**：不要寫「訪談同時追問另一個更即時的問題」「她的重點是後果承擔」「她點出另外兩個變數」「Wallace 先解釋為什麼中階主管首當其衝」「主持人開門見山問」。保留真正的問題或背景，刪掉「即將談什麼、這段重點是什麼、講者接下來要解釋什麼」的包裝
+- **禁止在引述前後複述內容（同話講兩遍，最常犯，務必根除）**：串接句不可以先用第三人稱預告下面引述；引述後也不可以再寫「她的重點是」「換句話說」「這表示」來解釋同一組要點。保留引述或轉述其中一種；只有新增必要背景、對照或後續影響時才另寫一句。
   - ❌（串接複述了引述）：`Ritter 指出，當估值逼近 2 兆美元，未來每年需要約 1,000 億美元稅後淨利才能在 20 倍本益比下支撐。他說：「……當估值逼近 2 兆美元，要在 20 倍本益比下撐住，公司每年要有 1,000 億美元的稅後淨利……」`
   - ✅（串接只給脈絡）：`談到 SpaceX 逼近 2 兆美元的估值該如何支撐，Ritter 說：「……當估值逼近 2 兆美元，要在 20 倍本益比下撐住，公司每年要有 1,000 億美元的稅後淨利……」`
   - 判準要**逐句**跑，不是整段一起看：把串接句和緊接引述並排，串接裡**任何一句／子句**只要它的內容（要點、數字、順序）在下面引述裡已經有了，那一句就是複述，單獨砍掉。
@@ -460,8 +466,8 @@ SYSTEM_PROMPT = """\
 - **多人對談的歸屬紀律（歸屬錯誤是硬失敗，與數字錯誤同級）**：每句引述掛在誰名下，只能依字幕裡的說話者線索判定——`>>` 交替標記、講者自稱、互相稱名、上下文接話——嚴禁依「誰比較有名」「誰常講這類話」腦補。字幕線索不足、無法確定是誰說的，就寫「節目中提到」「兩人都同意」這類不指名的寫法，禁止硬掛人名。**嚴禁把兩位講者的話縫成同一段「」引述**：對話中一人接話，就拆成兩段引述各自具名。引述內若出現第三人稱線索（"he's saying"、「Elon 說會的」），代表這段是某人在轉述別人，不是被轉述者本人在說話，不要標成本人引述。
 - **禁止形容講者的問題或觀點**：不要寫「他丟出一個很尖的問題」「這是一個饒有深意的觀點」「他描述了一個令人不寒而慄的場景」這類評價。直接寫「他問：」「他的觀點是：」「他舉了一個例子：」
 
-### 結語（1 段）
-- 2-3 句平實語句收尾，不要寫金句式總結（「X 不僅是 A，更是 B」這類否定式排比）
+### 結語（可省略，最多 1 段）
+- 正文已有自然收束時不要另寫結語。需要結語時，用 1-3 句收住全文，不要逐段重述，也不要寫金句式總結（「X 不僅是 A，更是 B」這類否定式排比）
 - 不要用「首先...其次...第三」的三段式結構
 - ⚠️ 結語只准總結正文已經出現的內容，嚴禁引入正文沒有的數據、主題或論點。結語提到的每個事實都必須能在上文找到；想放進結語的內容若正文沒有，先回頭補正文段落，不要只在結語出現。
 
@@ -475,7 +481,7 @@ SYSTEM_PROMPT = """\
 - 結尾的聽眾 QA 若含投資或產業內容，每題都要處理；純娛樂互動可略
 
 ### 格式規範
-- 總字數：**跟著逐字稿的內容量走，不設上限，寧長勿刪**。逐字稿內容密集時文章自然會長，禁止為了控制篇幅而砍論點或壓縮引述；內容單薄時也不要灌水
+- 總字數跟著內容密度走。重要論點不能為了短而刪，但重複口語、內容預告、報幕、逐段摘要與同義反覆不算完整性，必須刪除。文章可以長，每一段都要對讀者有用
 - 不要使用粗體標記短語或概念。只在數據列表中使用粗體（例如指數名稱、金額）
 - 講者原話用「」呈現，不使用 > 引用塊（引用塊保留給編者評論或特別重要的一句話摘要）
 
@@ -688,6 +694,23 @@ def _fabricated_english_entities(article: str, transcript: str, exempt: str = ""
     return flagged
 
 
+def _representative_quote_coverage(article: str) -> tuple[int, int]:
+    """Count main sections containing at least one substantive direct quote."""
+    sections = re.split(r"(?m)^##\s+", article)[1:]
+    main_sections = []
+    for section in sections:
+        heading = section.splitlines()[0].strip() if section.splitlines() else ""
+        if heading in {"導言", "結語"}:
+            continue
+        main_sections.append(section)
+    covered = 0
+    for section in main_sections:
+        quotes = re.findall(r"「([^「」]+)」", section)
+        if any(len(re.findall(r"[一-鿿]", quote)) >= 30 for quote in quotes):
+            covered += 1
+    return covered, len(main_sections)
+
+
 def format_violations(article: str) -> list:
     """Check a generated article against the SYSTEM_PROMPT 格式鐵則.
 
@@ -766,6 +789,8 @@ def format_violations(article: str) -> list:
         "笑著接", "順著接", "馬上搭腔", "馬上吐槽", "再補一刀",
         "把方向拉回", "把梗接到", "話鋒一轉", "切入核心",
         "苦笑著說", "笑著說", "笑說", "打趣", "搶話",
+        "開門見山", "先解釋為什麼", "點出另外",
+        "另一個更即時的問題", "她的重點是", "他的重點是",
     )
     hit = next((p for p in stage_phrases if p in narration), None)
     if hit:
@@ -798,19 +823,123 @@ def format_violations(article: str) -> list:
             f"串接區用了白名單外的引述動詞（出現「{verb_hit}」，"
             "只准用 說／表示／指出／提到／認為／補充／回答／問／接著說）"
         )
+    quote_sections, main_sections = _representative_quote_coverage(article)
+    required_quote_sections = min(
+        main_sections,
+        max(1, (main_sections + 1) // 2),
+    )
+    if main_sections and quote_sections < required_quote_sections:
+        issues.append(
+            f"只有 {quote_sections}/{main_sections} 個主要章節含實質直接引述；"
+            f"至少 {required_quote_sections} 個章節要保留能呈現講者語氣或論證方式的代表性原話，"
+            "不可把全文磨成第三人稱摘要"
+        )
+    redundant = _redundant_narration(article)
+    if redundant:
+        issues.append(
+            f"{len(redundant)} 句在引述前預告或引述後重述同一內容，例如「{redundant[0]}」；"
+            "每個觀點只保留引述或轉述其中一種"
+        )
     return issues
 
 
-def _redundant_narration(article: str) -> list:
-    """找出「串接句複述了緊接引述」的句子（同話講兩遍）。
+def _candidate_content_metrics(result: dict, transcript: str) -> dict[str, int]:
+    """Return conservative proxies used only when choosing among retries.
 
-    每個小節常是「串接(轉述) →「引述」」；若串接句把下面引述的內容先講一遍，
-    讀者會覺得同一段話講兩次。逐句判定而非整段：混血串接（一句複述焊在有合法
-    背景數字的段落裡）在整段比對下會被稀釋放行，這正是過去漏抓的原因。串接段
-    按句切開，任一句的 CJK 2-gram 過半被引述涵蓋、或與引述共用 ≥2 個帶單位數字，
-    即為複述。純警告、不觸發重生（複述屬內容結構問題，重生風險高，交由 humanizer
-    刪成純脈絡）。回傳複述句預覽。與 humanizer-zh scripts/final_gate.py 同邏輯，
-    改一邊記得改另一邊。
+    These metrics do not prove semantic coverage.  They prevent a cosmetically
+    cleaner retry from winning after it drops a material amount of article text,
+    transcript-backed numbers, and topic coverage at the same time.
+    """
+    article = result.get("article", "") if result else ""
+    topics = result.get("topics", []) if result else []
+
+    def _numbers(text: str) -> set[str]:
+        raw = re.findall(
+            r"(?<![A-Za-z0-9])[0-9][0-9,.]*(?:\s*(?:%|兆|億|萬|倍|美元|年|月|日|碼|點|MW|GW|GB))?",
+            text,
+            flags=re.IGNORECASE,
+        )
+        return {re.sub(r"[\s,]", "", n).lower() for n in raw}
+
+    transcript_numbers = _numbers(transcript)
+    article_numbers = _numbers(article)
+    return {
+        "cjk": len(re.findall(r"[一-鿿]", article)),
+        "topics": len([t for t in topics if str(t).strip()]),
+        "numbers": len(transcript_numbers & article_numbers),
+    }
+
+
+def _content_regressions(candidate: dict, incumbent: dict, transcript: str) -> list[str]:
+    """Describe material content-proxy regressions between retry candidates."""
+    new = _candidate_content_metrics(candidate, transcript)
+    old = _candidate_content_metrics(incumbent, transcript)
+    signals = []
+    if old["cjk"] >= 400 and new["cjk"] < old["cjk"] * 0.65:
+        signals.append(f"正文 CJK 字數 {old['cjk']}→{new['cjk']}")
+    if old["topics"] >= 3 and new["topics"] + 1 < old["topics"]:
+        signals.append(f"topics {old['topics']}→{new['topics']}")
+    if old["numbers"] >= 3 and new["numbers"] < old["numbers"] * 0.70:
+        signals.append(f"逐字稿數字承載 {old['numbers']}→{new['numbers']}")
+    # One proxy can fluctuate legitimately.  Require two independent loss
+    # signals before refusing an otherwise cleaner retry.
+    return signals if len(signals) >= 2 else []
+
+
+def _issue_score(issues: list) -> int:
+    """Weight content-integrity failures above cosmetic style failures."""
+    score = 0
+    for issue in issues:
+        if any(
+            marker in issue
+            for marker in (
+                "實質直接引述",
+                "未翻譯",
+                "大量未翻譯外語",
+                "長段落重複",
+                "分段後台資訊",
+                "西里爾字母",
+                "原始 JSON",
+            )
+        ):
+            score += 4
+        elif "複述" in issue:
+            score += 2
+        else:
+            score += 1
+    return score
+
+
+def _prefer_retry_candidate(
+    candidate: dict,
+    candidate_issues: list,
+    incumbent: dict | None,
+    incumbent_issues: list | None,
+    transcript: str,
+) -> tuple[bool, list[str]]:
+    """Choose a retry using both rule compliance and content-retention proxies."""
+    if incumbent is None or incumbent_issues is None:
+        return True, []
+    regressions = _content_regressions(candidate, incumbent, transcript)
+    if regressions:
+        return False, regressions
+    candidate_score = _issue_score(candidate_issues)
+    incumbent_score = _issue_score(incumbent_issues)
+    if candidate_score != incumbent_score:
+        return candidate_score < incumbent_score, []
+    new = _candidate_content_metrics(candidate, transcript)
+    old = _candidate_content_metrics(incumbent, transcript)
+    new_tiebreak = (new["topics"], new["numbers"], new["cjk"])
+    old_tiebreak = (old["topics"], old["numbers"], old["cjk"])
+    return new_tiebreak > old_tiebreak, []
+
+
+def _redundant_narration(article: str) -> list:
+    """找出引述前的內容預告與引述後的同義解說。
+
+    逐句比較引述前後相鄰的敘述段。任一句的 CJK 2-gram 過半被引述涵蓋，或與
+    引述共用至少兩個帶單位數字，即視為同一內容重複表達。這項檢查會參與生成重試，
+    殘留命中才交給 humanizer 判斷。與 humanizer-zh scripts/final_gate.py 同邏輯。
     """
     def _bigrams(s: str) -> set:
         s = re.sub(r"[^一-鿿]", "", s)
@@ -825,31 +954,35 @@ def _redundant_narration(article: str) -> list:
 
     paras = [p.strip() for p in article.split("\n\n") if p.strip()]
     hits = []
-    for i in range(1, len(paras)):
-        cur, prev = paras[i], paras[i - 1]
-        if cur.startswith("#") or prev.startswith("#"):
-            continue
-        if not _is_quote_para(cur) or _is_quote_para(prev):
+    for i, cur in enumerate(paras):
+        if cur.startswith("#") or not _is_quote_para(cur):
             continue
         quote = " ".join(re.findall(r"「([^「」]+)」", cur))
         qgrams, qnums = _bigrams(quote), _nums(quote)
-        narration = re.sub(r"「[^「」]*」", "", prev)
-        for sent in re.split(r"[。！？；]", narration):
-            sg = _bigrams(sent)
-            if len(sg) < 6:
-                continue
-            contain = len(sg & qgrams) / len(sg)
-            if contain >= 0.5 or len(_nums(sent) & qnums) >= 2:
-                hits.append(sent.strip()[:50])
-    return hits
+        neighbors = []
+        if i > 0 and not paras[i - 1].startswith("#") and not _is_quote_para(paras[i - 1]):
+            neighbors.append(("引述前", paras[i - 1]))
+        if i + 1 < len(paras) and not paras[i + 1].startswith("#") and not _is_quote_para(paras[i + 1]):
+            neighbors.append(("引述後", paras[i + 1]))
+        for position, paragraph in neighbors:
+            narration = re.sub(r"「[^「」]*」", "", paragraph)
+            for sent in re.split(r"[。！？；]", narration):
+                sg = _bigrams(sent)
+                if len(sg) < 6:
+                    continue
+                contain = len(sg & qgrams) / len(sg)
+                if contain >= 0.5 or len(_nums(sent) & qnums) >= 2:
+                    hits.append(f"{position}：{sent.strip()[:50]}")
+    return list(dict.fromkeys(hits))
 
 
 def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
     """Generate an article from a transcript, enforcing the format gate.
 
     Calls MiniMax once, runs format_violations() on the result; on failure,
-    retries once with the violation list appended to the prompt, then keeps
-    whichever attempt has fewer violations.
+    retries with the violation list appended to the prompt.  Selection considers
+    both rule compliance and content-retention proxies so a shorter, cleaner
+    retry cannot win after materially dropping topics and transcript-backed data.
 
     Args:
         part_info: If non-empty, appended to the user prompt to guide split handling.
@@ -905,12 +1038,12 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
                     + "、".join(sus[:12]) + ("…" if len(sus) > 12 else ""),
                     file=sys.stderr,
                 )
-        # 串接句複述緊接引述（同話講兩遍）：純警告、不觸發重生，交由 humanizer
-        # 刪成純脈絡或最簡「他說：」。見 humanizer-zh 模式 33。
+        # 生成重試後仍殘留的引述前後複述：保留警告，供 humanizer 做語境裁決。
         red = _redundant_narration(result.get("article", "")) if result else []
         if red:
             print(
-                "[note] 下列串接句疑似複述了緊接的引述（同話講兩遍），humanizer 請刪成純脈絡或最簡「他說：」："
+                "[note] 生成重試後仍有引述前後的疑似複述，humanizer 請逐句裁決，"
+                "同一觀點只保留引述或轉述其中一種："
                 + "；".join(f"「{r}…」" for r in red[:6]) + ("…" if len(red) > 6 else ""),
                 file=sys.stderr,
             )
@@ -940,9 +1073,23 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
         if attempt == 1:
             prompt = user_prompt
         else:
+            quote_repair = ""
+            if any("實質直接引述" in issue for issue in best_issues):
+                covered, total = _representative_quote_coverage(
+                    best.get("article", "") if best else ""
+                )
+                required = min(total, max(1, (total + 1) // 2)) if total else 1
+                quote_repair = (
+                    f"上一版只有 {covered}/{total} 個主要章節有實質引述。"
+                    f"這次請逐一檢查每個 ## 主要章節，至少讓 {required} 個章節各保留一段"
+                    "30 個中文字以上、能呈現講者語氣或論證方式的連續原話；"
+                    "原話翻成自然繁體中文後用「」框住，嚴禁改用 > 引用塊。"
+                    "不要只替名詞、介面文字或短例句加引號，那不算代表性引述。"
+                )
             prompt = user_prompt + (
                 "\n\n⚠️ 你上一次的輸出違反了格式鐵則：" + "；".join(best_issues) + "。"
-                "請重新輸出完整 JSON。最重要：**整篇文章（標題、導言、所有段落、引述）必須是繁體中文**，"
+                + quote_repair
+                + "請重新輸出完整 JSON。最重要：**整篇文章（標題、導言、所有段落、引述）必須是繁體中文**，"
                 "嚴禁任何非中文整句或段落（英文、日文、韓文等外語，尤其嚴禁整段日文假名或韓文諺文原樣照貼，"
                 "也嚴禁用 \"…\" 或「」貼外語原句）；嚴禁 > 引用塊。"
                 "專有名詞（人名、公司名、技術術語）可保留英文，"
@@ -953,13 +1100,29 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
         cand = _request_article(prompt, metadata)
         cand["article"] = _strip_model_artifacts(cand.get("article", ""))
         cand_issues = format_violations(cand.get("article", ""))
-        if not cand_issues:
-            return _finalize(cand)
-        if best_issues is None or len(cand_issues) < len(best_issues):
+        prefer, regressions = _prefer_retry_candidate(
+            cand, cand_issues, best, best_issues, transcript
+        )
+        if prefer:
             best, best_issues = cand, cand_issues
-        print(f"[warn] 第 {attempt}/{MAX_ATTEMPTS} 次格式鐵則未通過：{'；'.join(cand_issues)}",
-              file=sys.stderr)
-    print(f"[warn] {MAX_ATTEMPTS} 次後仍未完全通過，保留違規最少的一版", file=sys.stderr)
+        elif regressions:
+            print(
+                "[warn] 本次重試雖可能較乾淨，但內容代理指標明顯退化，不取代目前最佳版："
+                + "；".join(regressions),
+                file=sys.stderr,
+            )
+        if not cand_issues and best is cand:
+            return _finalize(cand)
+        if cand_issues:
+            print(
+                f"[warn] 第 {attempt}/{MAX_ATTEMPTS} 次格式鐵則未通過："
+                + "；".join(cand_issues),
+                file=sys.stderr,
+            )
+    print(
+        f"[warn] {MAX_ATTEMPTS} 次後仍未完全通過，保留規則遵循與內容承載綜合較佳的一版",
+        file=sys.stderr,
+    )
     return _finalize(best)
 
 

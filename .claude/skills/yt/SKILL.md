@@ -5,7 +5,7 @@ description: "將 YouTube 影片轉為深度洞察文章。當用戶貼上 YouTu
 
 # /yt — YouTube 影片轉深度洞察文章
 
-將 YouTube 影片的字幕內容，透過 MiniMax M3 API 轉化為一篇有故事性、有分析觀點的繁體中文深度文章，並自動存入 Obsidian vault。
+將 YouTube 影片的字幕內容，透過 MiniMax M3 API 編輯成一篇完整、好讀、有講者聲音的繁體中文長文，並自動存入 Obsidian vault。原稿本身就要值得閱讀，不能把報幕句、內容預告、引述複述或僵硬段落留給 humanizer 收拾。
 
 ## 使用方式
 
@@ -29,9 +29,9 @@ python "<skill-path>/scripts/yt_to_article.py" "<YouTube URL>"
 1. 解析 URL 提取 video_id
 2. 用 `youtube-transcript-api` 抓取字幕（優先：zh-TW → zh → en → 任何可用；字幕不可用時自動退到本地 Whisper 轉錄）
 3. 用 `yt-dlp --dump-json` 取得影片 metadata（標題、頻道、日期）
-4. 將字幕 + metadata 送入 MiniMax M3 API，生成結構化的深度洞察文章。長逐字稿依語言切段（中文 ~12k、英文 ~20k、日韓 ~18k 字元／段），確保每段有足夠輸出空間全覆蓋、不跳段
+4. 將字幕 + metadata 送入 MiniMax M3 API，完成主題盤點、選材、敘事結構、引述取捨與中文寫作。M3 只可轉述低歧義、語氣普通的連續資訊；數字、否定、因果、比較、條件、利益揭露與立場強度優先保留為引述。每個主要主題至少選一段最能代表講者語氣或論證方式的直接引述，不能把全文磨成第三人稱摘要。長逐字稿依語言切段（中文 ~12k、英文 ~20k、日韓 ~18k 字元／段），確保重要內容完整承載
 5. 格式化為 markdown（含 YAML frontmatter）並存入 Obsidian vault
-6. **原文逐字稿一律另存 `<檔名>_transcript.txt`**（humanizer 對帳的 ground truth）；stderr 的 `[note]` 警告（專名查無、串接複述、覆蓋率偏低）要轉交 humanizer 處理
+6. **原文逐字稿一律另存 `<檔名>_transcript.txt`**（humanizer 對帳的 ground truth）。`$yt` 自己負責消除已偵測到的串接複述；stderr 的 `[note]` 僅保留需要逐字稿或外部查證才能裁決的專名與覆蓋風險
 
 ### Step 2: 確認結果
 
@@ -67,12 +67,12 @@ tags: [標籤]
 
 > 原始影片：[標題](URL) | 頻道 | 日期
 
-<導言 2-3 段>
+<精簡導言>
 
 ## <小標題 1>
 <深度分析內容>
 
-## <小標題 2-6>
+## <依內容需要安排的小標題>
 ...
 
 ## 結語
