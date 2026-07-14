@@ -70,7 +70,7 @@ def _is_quote_para(p: str) -> bool:
 
 
 def representative_quote_coverage(article: str) -> tuple[int, int]:
-    """Count main sections containing a substantive translated direct quote."""
+    """Count sections with one long quote or a substantive short exchange."""
     sections = re.split(r"(?m)^##\s+", article)[1:]
     main_sections = []
     for section in sections:
@@ -81,7 +81,11 @@ def representative_quote_coverage(article: str) -> tuple[int, int]:
     covered = 0
     for section in main_sections:
         quotes = re.findall(r"「([^「」]+)」", section)
-        if any(len(re.findall(r"[一-鿿]", quote)) >= 30 for quote in quotes):
+        quote_lengths = [len(re.findall(r"[一-鿿]", quote)) for quote in quotes]
+        dialogue_lengths = [length for length in quote_lengths if length >= 6]
+        if any(length >= 30 for length in quote_lengths) or (
+            len(dialogue_lengths) >= 2 and sum(dialogue_lengths) >= 30
+        ):
             covered += 1
     return covered, len(main_sections)
 
@@ -258,7 +262,8 @@ def main() -> int:
     if main_sections and quote_sections < required_quote_sections:
         hard.append(
             f"講者聲音不足｜全文｜只有 {quote_sections}/{main_sections} 個主要章節含實質直接引述，"
-            f"至少需要 {required_quote_sections} 個；這是章節覆蓋下限，不是引述字數配額"
+            f"至少需要 {required_quote_sections} 個；每章可用單段 30 字，或至少兩段各 6 字以上、"
+            "合計 30 字的短對話，名詞碎片不計；這是章節覆蓋下限，不是引述字數配額"
         )
 
     transcript = _find_transcript(sys.argv[1])

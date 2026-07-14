@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import re
 import unittest
 
 
@@ -126,6 +127,37 @@ class RepresentativeQuoteCoverageTests(unittest.TestCase):
         self.assertEqual((covered, total), (2, 4))
         self.assertEqual(gate.representative_quote_coverage(article), (2, 4))
         self.assertFalse(
+            any("實質直接引述" in issue for issue in yt.format_violations(article))
+        )
+
+    def test_short_multi_speaker_exchange_counts_in_aggregate(self) -> None:
+        article = "\n".join(
+            [
+                "## 快速交鋒",
+                "Ian：『這做法根本不可能規模化。』"
+                "Tobias：『我不同意，客戶已經在用了。』"
+                "Ian：『試用不等於能長期付費。』",
+            ]
+        ).replace("『", "「").replace("』", "」")
+        self.assertEqual(yt._representative_quote_coverage(article), (1, 1))
+        self.assertEqual(gate.representative_quote_coverage(article), (1, 1))
+        self.assertFalse(
+            any("實質直接引述" in issue for issue in yt.format_violations(article))
+        )
+
+    def test_tiny_quoted_terms_cannot_accumulate_into_coverage(self) -> None:
+        quoted_terms = "、".join(f"「名詞{i}」" for i in range(16))
+        article = f"## 產品清單\n介面列出：{quoted_terms}。"
+        self.assertGreaterEqual(
+            sum(
+                len(re.findall(r"[一-鿿]", quote))
+                for quote in re.findall(r"「([^「」]+)」", article)
+            ),
+            30,
+        )
+        self.assertEqual(yt._representative_quote_coverage(article), (0, 1))
+        self.assertEqual(gate.representative_quote_coverage(article), (0, 1))
+        self.assertTrue(
             any("實質直接引述" in issue for issue in yt.format_violations(article))
         )
 

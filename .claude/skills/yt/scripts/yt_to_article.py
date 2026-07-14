@@ -695,7 +695,7 @@ def _fabricated_english_entities(article: str, transcript: str, exempt: str = ""
 
 
 def _representative_quote_coverage(article: str) -> tuple[int, int]:
-    """Count main sections containing at least one substantive direct quote."""
+    """Count sections with one long quote or a substantive short exchange."""
     sections = re.split(r"(?m)^##\s+", article)[1:]
     main_sections = []
     for section in sections:
@@ -706,7 +706,11 @@ def _representative_quote_coverage(article: str) -> tuple[int, int]:
     covered = 0
     for section in main_sections:
         quotes = re.findall(r"「([^「」]+)」", section)
-        if any(len(re.findall(r"[一-鿿]", quote)) >= 30 for quote in quotes):
+        quote_lengths = [len(re.findall(r"[一-鿿]", quote)) for quote in quotes]
+        dialogue_lengths = [length for length in quote_lengths if length >= 6]
+        if any(length >= 30 for length in quote_lengths) or (
+            len(dialogue_lengths) >= 2 and sum(dialogue_lengths) >= 30
+        ):
             covered += 1
     return covered, len(main_sections)
 
@@ -832,7 +836,8 @@ def format_violations(article: str) -> list:
         issues.append(
             f"只有 {quote_sections}/{main_sections} 個主要章節含實質直接引述；"
             f"至少 {required_quote_sections} 個章節要保留能呈現講者語氣或論證方式的代表性原話，"
-            "不可把全文磨成第三人稱摘要"
+            "可用單段 30 字，或同章至少兩段各 6 字以上、合計 30 字的短對話；"
+            "不可把全文磨成第三人稱摘要，也不可用名詞碎片湊數"
         )
     redundant = _redundant_narration(article)
     if redundant:
@@ -1081,10 +1086,11 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
                 required = min(total, max(1, (total + 1) // 2)) if total else 1
                 quote_repair = (
                     f"上一版只有 {covered}/{total} 個主要章節有實質引述。"
-                    f"這次請逐一檢查每個 ## 主要章節，至少讓 {required} 個章節各保留一段"
-                    "30 個中文字以上、能呈現講者語氣或論證方式的連續原話；"
+                    f"這次請逐一檢查每個 ## 主要章節，至少讓 {required} 個章節保留"
+                    "能呈現講者語氣或論證方式的原話：單段至少 30 個中文字，或快速交鋒時"
+                    "同章至少兩段各 6 字以上、合計 30 字以上的短對話；"
                     "原話翻成自然繁體中文後用「」框住，嚴禁改用 > 引用塊。"
-                    "不要只替名詞、介面文字或短例句加引號，那不算代表性引述。"
+                    "不要只替名詞、產品名、介面文字或兩三字短例句加引號，那不算代表性引述。"
                 )
             prompt = user_prompt + (
                 "\n\n⚠️ 你上一次的輸出違反了格式鐵則：" + "；".join(best_issues) + "。"
