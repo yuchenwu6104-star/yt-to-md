@@ -21,7 +21,7 @@ import sys
 # ---- 黑名單（與 /yt yt_to_article.py 的 format_violations 同源，改一邊記得改另一邊）----
 
 STAGE_PHRASES = (
-    "補了一句", "補了一個", "補一句", "補一刀", "補了一刀",
+    "補了一句", "補了一個", "補一句", "補一刀", "補了一刀", "補刀",
     "補了最後一刀", "補了一個畫面", "補了一個細節",
     "補上", "補了一段", "補述", "再補一句", "再補一個",
     "笑著接", "順著接", "馬上搭腔", "馬上吐槽", "再補一刀",
@@ -64,9 +64,43 @@ def _nums(s: str) -> set:
     return set(re.findall(r"[0-9][0-9,.]*\s*(?:兆|億|倍|%|萬)", s))
 
 
+def _english_tokens(s: str) -> set:
+    stop = {"the", "and", "or", "to", "of", "in", "on", "for", "ai"}
+    return {
+        token.lower()
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9'-]+", s)
+        if token.lower() not in stop
+    }
+
+
+def _same_claim(sentence: str, reference: str) -> bool:
+    """Broadly recall repeated claims, including English-heavy proper nouns."""
+    sentence_grams = _bigrams(sentence)
+    reference_grams = _bigrams(reference)
+    contain = (
+        len(sentence_grams & reference_grams) / len(sentence_grams)
+        if len(sentence_grams) >= 4 and len(reference_grams) >= 4
+        else 0.0
+    )
+    shared_english = _english_tokens(sentence) & _english_tokens(reference)
+    return (
+        contain >= 0.5
+        or len(_nums(sentence) & _nums(reference)) >= 2
+        or len(shared_english) >= 3
+        or (
+            len(shared_english) >= 2
+            and len(sentence_grams & reference_grams) >= 1
+        )
+    )
+
+
 def _is_quote_para(p: str) -> bool:
     qs = re.findall(r"「([^「」]{15,})」", p)
     return bool(qs) and sum(len(x) for x in qs) > len(p) * 0.5
+
+
+def _has_substantive_quote(p: str) -> bool:
+    return any(len(quote) >= 15 for quote in re.findall(r"「([^「」]+)」", p))
 
 
 def representative_quote_coverage(article: str) -> tuple[int, int]:
@@ -98,11 +132,15 @@ def restatement_candidates(paras: list) -> list:
     """
     hits = []
     for i, cur in enumerate(paras):
-        if cur.startswith("#") or not _is_quote_para(cur):
+        if cur.startswith("#") or not _has_substantive_quote(cur):
             continue
-        quote = " ".join(re.findall(r"「([^「」]+)」", cur))
+        quotes = re.findall(r"「([^「」]+)」", cur)
+        quote = " ".join(quotes)
         qgrams, qnums = _bigrams(quote), _nums(quote)
         neighbors = []
+        same_paragraph_narration = _strip_quotes(cur)
+        if same_paragraph_narration.strip():
+            neighbors.append(("同段串接", same_paragraph_narration))
         if i > 0 and not paras[i - 1].startswith("#") and not _is_quote_para(paras[i - 1]):
             neighbors.append(("引述前", paras[i - 1]))
         if i + 1 < len(paras) and not paras[i + 1].startswith("#") and not _is_quote_para(paras[i + 1]):
@@ -110,11 +148,27 @@ def restatement_candidates(paras: list) -> list:
         for position, paragraph in neighbors:
             for sent in re.split(r"[。！？；]", _strip_quotes(paragraph)):
                 sg = _bigrams(sent)
-                if len(sg) < 6:
+                same_claim = _same_claim(sent, quote)
+                if len(sg) < 6 and not same_claim:
                     continue
-                contain = len(sg & qgrams) / len(sg)
-                if contain >= 0.5 or len(_nums(sent) & qnums) >= 2:
+                contain = len(sg & qgrams) / len(sg) if sg else 0.0
+                if (
+                    contain >= 0.5
+                    or len(_nums(sent) & qnums) >= 2
+                    or same_claim
+                ):
                     hits.append(f"{position}：{sent.strip()[:55]}")
+        for quoted in quotes:
+            sentences = [
+                sent.strip()
+                for sent in re.split(r"[。！？；]", quoted)
+                if sent.strip()
+            ]
+            for left, right in zip(sentences, sentences[1:]):
+                if _same_claim(left, right):
+                    hits.append(
+                        f"引述內自我複述：{left[:26]} ↔ {right[:26]}"
+                    )
     return list(dict.fromkeys(hits))
 
 

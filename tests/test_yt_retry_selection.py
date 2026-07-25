@@ -162,5 +162,41 @@ class RepresentativeQuoteCoverageTests(unittest.TestCase):
         )
 
 
+class RestatementDetectionTests(unittest.TestCase):
+    def test_detects_same_paragraph_narration_that_previews_quote(self) -> None:
+        article = (
+            "## 模型選擇\n\n"
+            "團隊先比較部署成本、工具相容性與維護負擔，也回顧前兩輪測試結果。"
+            "這套流程最後選擇 OpenAI Codex 作為核心模型。"
+            "講者說：「這套流程最後選擇 OpenAI Codex 作為核心模型，"
+            "因為它能處理完整的研究工作。」"
+        )
+        yt_hits = yt._redundant_narration(article)
+        gate_hits = gate.restatement_candidates(article.split("\n\n"))
+        self.assertTrue(any(hit.startswith("同段串接：") for hit in yt_hits))
+        self.assertTrue(any(hit.startswith("同段串接：") for hit in gate_hits))
+
+    def test_detects_english_heavy_restatement_with_little_cjk_overlap(self) -> None:
+        article = (
+            "OpenAI Codex workflow architecture 已定案。\n\n"
+            "講者說：「OpenAI Codex workflow architecture handles the "
+            "entire research pipeline and review process。」"
+        )
+        yt_hits = yt._redundant_narration(article)
+        gate_hits = gate.restatement_candidates(article.split("\n\n"))
+        self.assertTrue(any(hit.startswith("引述前：") for hit in yt_hits))
+        self.assertTrue(any(hit.startswith("引述前：") for hit in gate_hits))
+
+    def test_detects_english_heavy_repetition_inside_quote(self) -> None:
+        article = (
+            "講者說：「OpenAI Codex workflow orchestrates research。"
+            "OpenAI Codex workflow runs the research process。」"
+        )
+        yt_hits = yt._redundant_narration(article)
+        gate_hits = gate.restatement_candidates([article])
+        self.assertTrue(any("引述內自我複述" in hit for hit in yt_hits))
+        self.assertTrue(any("引述內自我複述" in hit for hit in gate_hits))
+
+
 if __name__ == "__main__":
     unittest.main()

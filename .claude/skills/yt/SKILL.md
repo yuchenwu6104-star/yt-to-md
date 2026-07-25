@@ -22,7 +22,8 @@ description: "將 YouTube 影片轉為深度洞察文章。當用戶貼上 YouTu
 運行 bundled script 完成整個流程：
 
 ```bash
-python "<skill-path>/scripts/yt_to_article.py" "<YouTube URL>"
+/Users/slking/Documents/訪談摘要/.venv/bin/python \
+  "<skill-path>/scripts/yt_to_article.py" "<YouTube URL>"
 ```
 
 腳本會自動：

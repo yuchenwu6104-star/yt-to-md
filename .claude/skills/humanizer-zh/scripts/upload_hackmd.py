@@ -25,6 +25,80 @@ for _p in Path(__file__).resolve().parents:
 from ytkit import config  # noqa: E402
 
 
+def _meaningful_quotes(content: str) -> list[str]:
+    body = re.sub(r"\A---\n.*?\n---\n", "", content, count=1, flags=re.DOTALL)
+    return [
+        quote
+        for quote in re.findall(r"「([^「」]+)」", body)
+        if len(re.findall(r"[\u3400-\u9fff]", quote)) >= 6
+    ]
+
+
+def _audit_evidence_errors(content: str, audit_text: str) -> list[str]:
+    """Validate that the audit proves a quote-by-quote cold read."""
+    errors = []
+    for section in range(1, 8):
+        if not re.search(rf"(?m)^##\s+{section}\.", audit_text):
+            errors.append(f"缺少 audit 第 {section} 節")
+    if (
+        re.search(
+            r"待 fresh reviewer|待獨立盲審|待盲審|尚待處理|未完成",
+            audit_text,
+            flags=re.IGNORECASE,
+        )
+        or re.search(r"\bTODO\b", audit_text, flags=re.IGNORECASE)
+    ):
+        errors.append("audit 仍含 provisional／待辦文字")
+
+    quote_count = len(_meaningful_quotes(content))
+    section_6_match = re.search(
+        r"(?ms)^##\s+6\.\s+.*?(?=^##\s+\d+\.|\Z)",
+        audit_text,
+    )
+    section_6 = section_6_match.group(0) if section_6_match else ""
+    marker = re.search(
+        r"逐引述掃描覆蓋：\s*(\d+)\s*/\s*(\d+)",
+        section_6,
+    )
+    if not marker:
+        errors.append("缺少「逐引述掃描覆蓋：N/N」")
+    elif tuple(map(int, marker.groups())) != (quote_count, quote_count):
+        errors.append(
+            f"逐引述掃描覆蓋數不符：audit={marker.group(1)}/{marker.group(2)}，"
+            f"成品實際={quote_count}"
+        )
+
+    expected_ids = [f"Q{index:02d}" for index in range(1, quote_count + 1)]
+    quote_rows = [
+        line
+        for line in section_6.splitlines()
+        if re.match(r"^\|\s*Q\d{2,}\s*\|", line)
+    ]
+    actual_ids = [
+        re.match(r"^\|\s*(Q\d{2,})\s*\|", line).group(1)
+        for line in quote_rows
+    ]
+    if actual_ids != expected_ids:
+        missing = [quote_id for quote_id in expected_ids if quote_id not in actual_ids]
+        extra = [
+            quote_id
+            for index, quote_id in enumerate(actual_ids)
+            if quote_id not in expected_ids or quote_id in actual_ids[:index]
+        ]
+        errors.append(
+            f"逐引述掃描表 ID 不完整或順序錯誤："
+            f"實際={actual_ids}，缺少={missing}，重複或多出={extra}"
+        )
+    malformed = []
+    for line in quote_rows:
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 6 or any(not cell for cell in cells):
+            malformed.append(cells[0] if cells else "未知")
+    if malformed:
+        errors.append(f"逐引述掃描表欄位不完整：{malformed}，每列必須有 6 個非空欄位")
+    return errors
+
+
 def load_env_token() -> str:
     token = config.hackmd_token()
     if not token:
@@ -70,6 +144,16 @@ def _quality_gate(file_path: Path) -> None:
             "依 humanizer-zh SKILL.md「交付清單」，七項證據（修改清單、引述回對表、"
             "專名核對表、數字對帳、歸屬核對、朗讀證據、串接複述掃描）加覆蓋對帳表"
             "必須先落檔為 _audit.md 才可上傳。沒有清單＝沒查，回去補做。"
+        )
+    content = file_path.read_text(encoding="utf-8")
+    audit_errors = _audit_evidence_errors(
+        content,
+        audit.read_text(encoding="utf-8"),
+    )
+    if audit_errors:
+        sys.exit(
+            "拒絕上傳：audit 只有格式或概括結論，沒有完成逐引述證據。\n- "
+            + "\n- ".join(audit_errors)
         )
 
 
