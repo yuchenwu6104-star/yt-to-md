@@ -8,7 +8,7 @@
 
 | 腳本 | 功能 |
 |------|------|
-| `yt_to_article.py` | 單支影片 URL → 深度洞察文章（Markdown） |
+| `yt_to_article.py` | 單支影片 URL → 中文全文順稿（Markdown）；成文由 `/humanizer-zh` 接手 |
 | `yt_channel_watcher.py` | 每日自動輪巡頻道，批次處理新影片 |
 | `transcribe.py` | 無字幕影片本地轉錄（Windows CUDA / Mac MLX / CPU 自動切換） |
 | `md_to_fb.py` | 深度文章 → Facebook 貼文格式 |
@@ -161,11 +161,11 @@ python .claude/skills/yt/scripts/transcribe.py "<YouTube URL>" --out transcript.
 
 ## 輸出格式
 
-文章以 YAML frontmatter + Markdown 儲存：
+`/yt` 產出的是中文全文順稿（依字幕順序、說話人前綴行、不選材不下小標），成文由 `/humanizer-zh` 負責。順稿以 YAML frontmatter + Markdown 儲存：
 
 ```markdown
 ---
-type: yt_article
+type: yt_transcript_zh
 date: 2026-04-01
 source: YouTube
 youtube_url: https://www.youtube.com/watch?v=...

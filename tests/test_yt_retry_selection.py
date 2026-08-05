@@ -77,7 +77,7 @@ class RetrySelectionTests(unittest.TestCase):
             new,
             ["串接區出現舞台指示", "串接區替講者語氣打分"],
             old,
-            ["只有 0/4 個主要章節含實質直接引述"],
+            ["覆蓋率不足：成稿只有 300 個中文字，字幕 14000 字元"],
             self.transcript,
         )
         self.assertTrue(prefer)
@@ -94,6 +94,13 @@ class RetrySelectionTests(unittest.TestCase):
 
 
 class RepresentativeQuoteCoverageTests(unittest.TestCase):
+    """引述覆蓋率口徑的 yt ↔ humanizer-zh parity。
+
+    2026-08-06 起 /yt 產出中文全文順稿（無「」引號），此項已不再是 /yt 的
+    format_violations 閘門條件；helper 保留供下游 humanizer 成文階段使用，
+    這裡只驗證兩邊口徑一致。
+    """
+
     LONG_QUOTE = "這是一段能夠完整呈現講者語氣與論證方式的代表性直接引述，不能只留下零碎名詞。"
 
     def test_requires_substantive_quotes_in_half_of_main_sections(self) -> None:
@@ -110,9 +117,6 @@ class RepresentativeQuoteCoverageTests(unittest.TestCase):
         covered, total = yt._representative_quote_coverage(article)
         self.assertEqual((covered, total), (1, 4))
         self.assertEqual(gate.representative_quote_coverage(article), (1, 4))
-        self.assertTrue(
-            any("實質直接引述" in issue for issue in yt.format_violations(article))
-        )
 
     def test_passes_quote_coverage_without_reintroducing_a_word_quota(self) -> None:
         article = "\n\n".join(
@@ -126,9 +130,6 @@ class RepresentativeQuoteCoverageTests(unittest.TestCase):
         covered, total = yt._representative_quote_coverage(article)
         self.assertEqual((covered, total), (2, 4))
         self.assertEqual(gate.representative_quote_coverage(article), (2, 4))
-        self.assertFalse(
-            any("實質直接引述" in issue for issue in yt.format_violations(article))
-        )
 
     def test_short_multi_speaker_exchange_counts_in_aggregate(self) -> None:
         article = "\n".join(
@@ -141,9 +142,6 @@ class RepresentativeQuoteCoverageTests(unittest.TestCase):
         ).replace("『", "「").replace("』", "」")
         self.assertEqual(yt._representative_quote_coverage(article), (1, 1))
         self.assertEqual(gate.representative_quote_coverage(article), (1, 1))
-        self.assertFalse(
-            any("實質直接引述" in issue for issue in yt.format_violations(article))
-        )
 
     def test_tiny_quoted_terms_cannot_accumulate_into_coverage(self) -> None:
         quoted_terms = "、".join(f"「名詞{i}」" for i in range(16))
@@ -157,9 +155,6 @@ class RepresentativeQuoteCoverageTests(unittest.TestCase):
         )
         self.assertEqual(yt._representative_quote_coverage(article), (0, 1))
         self.assertEqual(gate.representative_quote_coverage(article), (0, 1))
-        self.assertTrue(
-            any("實質直接引述" in issue for issue in yt.format_violations(article))
-        )
 
 
 class RestatementDetectionTests(unittest.TestCase):

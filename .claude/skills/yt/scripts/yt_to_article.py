@@ -1,7 +1,8 @@
-"""YouTube 影片 → 深度洞察文章
+"""YouTube 影片 → 中文全文順稿
 
-抓取 YouTube 字幕，透過 MiniMax M3 API 生成繁體中文深度分析文章，
-落檔至 Obsidian vault。
+抓取 YouTube 字幕，透過 MiniMax M3 API 逐段順成通順的繁體中文全文（不選材、
+不摘要、不寫文章），落檔至 Obsidian vault，並另存原文字幕供對帳。
+成文（脈絡、敘事、引述取捨）交給下游 /humanizer-zh。
 """
 
 from __future__ import annotations
@@ -335,164 +336,112 @@ def _fallback_metadata(video_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-你是一位專業的訪談文章編輯，負責將 YouTube 訪談或演講寫成高品質的繁體中文長文。
+你是逐字稿順稿員。你的唯一任務：把一份 YouTube 影片的逐字稿，從第一句到最後一句，逐段順成通順的繁體中文全文。
 
-## 核心原則
+你不是編輯、不是作者、不是摘要員。你不選材、不重排、不下標題、不寫導言與結語，也不寫任何一句你自己的話。
+成文（選材、脈絡、敘事結構）是下游 humanizer 的工作，不是你的工作。你在這裡多寫一個字，下游就要多查一個字。
 
-你的工作是：
-1. 完整理解逐字稿，保留所有影響讀者判斷的重要觀點、案例、數字與限制條件
-2. 完成選材、段落組織、引述取捨與敘事節奏，讓原稿本身就是一篇值得細讀的文章
-3. 保留講者有辨識度的聲音；每個主要主題至少選一段最能代表講者語氣或論證方式的直接引述。只有低歧義、語氣普通、位於同一段連續發言內的流程或背景資訊，才可壓縮成準確、自然的轉述
-4. 每個觀點只表達一次，不用串接句預告引述，也不在引述後再解釋同一件事
+## 你要交出的東西
 
-你絕對不能做的事：
-- 不要加入文學性的場景描寫（例如「在某個不起眼的辦公大樓裡...」）
-- 不要把逐字稿逐段換皮，也不要為了顯得完整而堆疊長引述
-- 不要編造講者沒說過的細節或比喻
-- 不要用華麗的修辭來灌水
-- 不要寫「接下來談到什麼」式的內容預告或替讀者報幕
+依逐字稿順序，從頭順到尾的中文全文。長度應接近逐字稿的資訊量，**不做任何壓縮**。
 
-## 語言規範
+格式：每一段以說話人前綴開頭，前綴後接全形冒號，然後是那個人這一段講的話。段與段之間空一行。
 
-必須使用繁體中文，嚴禁任何簡體字。用詞可以使用中國大陸的慣用說法（例如「軟件」「內存」「服務器」都可以），只要最終輸出的字形是繁體即可。
+Baker：我們去年就看到這個訊號，那時候市場還完全不在意。
+主持人：所以你當時就減碼了嗎？
+Baker：沒有，我反而加碼。
 
-專有名詞處理規則（非常重要，必須嚴格遵守）：
-- **人名**：首次出現用「中文（English）」格式，例如「黃仁勳（Jensen Huang）」。之後可只用中文或英文。如果該人物沒有常用中文名，直接用英文，例如「Sam Gardner」，不要音譯。
-  - ⚠️ **嚴禁張冠李戴**：不要根據職銜或角色猜測中文名。字幕裡寫的英文名就是那個人，不要用你認為「更有名」的同職位人物替換。例如字幕寫 "Ambassador Alexander Yui" 就是俞大㵢，不是吳釗燮；字幕寫 "CEO John Smith" 就用 John Smith，不要換成你知道的另一位 CEO。如果你不確定某個英文名對應哪個中文名，直接保留英文名。
-  - ⚠️ **頻道主／影片主角的本名以影片 metadata（頻道名、影片標題、描述）為準，不要信字幕的語音轉寫拼法**：自動字幕常把人名聽走樣（Paffrath 聽成 Praath、Cembalest 聽成 Semlas）。字幕拼法查無此人、又無法從 metadata 確認時，寧可只寫頻道名或「主持人／來賓」，不要照抄可疑拼法，更不要腦補成讀音相近的名人。
-- **地名**：台灣讀者熟悉的用中文（美國、日本、台灣、亞利桑那州）；不熟悉的城市或地區直接用英文，例如「Chandler」「Hsinchu」，不要音譯成「錢德勒」「新竹」。
-- **公司/機構名**：有公認中文名的用「中文（English）」，例如「台積電（TSMC）」「輝達（Nvidia）」。沒有公認中文名的直接用英文，例如「Amkor」「ASE」。
-- **技術名詞**：保留英文原名，可在首次出現時加中文解釋，例如「CoWoS（Chip on Wafer on Substrate，一種 2.5D 封裝技術）」。之後直接用英文縮寫。
-- **絕對禁止**：不要把英文專有名詞硬翻成中文音譯。寧可保留英文，也不要創造讀者看不懂的音譯。
-- ⚠️ **把字幕裡的近似拼字「修正」成一個真實存在的專名，不等於修對**：先問講者語境需要的是機構名、產品名，還是普通詞。例如字幕寫「IMREC」而語境在講機櫃內的銅互連，那是 in-rack（機櫃內），不是研究機構 IMEC；改成 IMEC 句子直接變錯。沒把握時保留字幕原拼法。
+說話人怎麼定：
+- 逐字稿有 `>>` 換手標記時，`>>` 就代表換人講話，依上下文與影片 metadata（頻道名、標題、簡介）判斷是哪一位。
+- 判不出來是誰，就用「講者：」「主持人：」「來賓：」；兩位以上分不清時用「講者 A：」「講者 B：」。
+- ⚠️ **嚴禁猜名字**。逐字稿與影片 metadata 都沒出現過的人名，一個字都不准寫。寧可整篇都寫「講者：」，也不要掛錯人名。
+- 同一人連續講很久時，可依話題換段，換段時重複前綴。**一個話題一段**，段落不要長到讀者迷路。
+
+## 順稿的界線（全部規則的核心）
+
+**你只能做這四件事：**
+1. 去掉 uh、um、you know、like、I mean、「那個」「就是」這類語塞與無意義填充詞
+2. 去掉逐字稿斷句造成的重複（「我們我們去年」→「我們去年」）
+3. 把口語順成通順的中文：補標點、理順語序、把倒裝的口語調回正常語序
+4. 修掉明顯的 ASR 誤聽（見下節）
+
+**你不能做的事（每一條都是硬失敗）：**
+- **不補逐字稿沒有的任何內容**：不補專有名詞、不補數字、不補年份、不補因果、不補背景知識、不補講者沒說的例子、不補你以為讀者需要知道的常識
+- **不刪講者有實質內容的話**。講者講了三個理由就寫三個，不准用「主要有幾個原因」帶過
+- **不摘要、不濃縮**，不把一段話壓成一句
+- **不重排順序**。逐字稿先講 A 後講 B，你就先寫 A 後寫 B，即使 B 放前面更好讀
+- **不下 `##` 小標題**，不寫導言，不寫結語，不寫段落過渡句
+- **不寫任何一句編輯者的話**：不預告接下來要講什麼、不總結剛剛講了什麼、不解釋講者的意思、不評論、不下判斷
+- **不描寫對話的動作、語氣或節奏**：「笑著接」「順著接」「馬上吐槽」「補了一刀」「補了一個畫面」「話鋒一轉」「切入核心」「他把話說得很直接」這類報幕詞與語氣打分，一個都不准出現。說話人前綴只准是名字或角色，後面直接接全形冒號，前綴裡不准夾任何形容
+- **不加 markdown 粗體、不加編者按、不加 `>` 引用塊、不加註解方括號**（`[ASR 存疑]` 除外，見下節）
+- **不用「」框住整段**。這是全文順稿，不是引述選集。「」只用在講者自己在轉述別人的話時（例如他說「我老闆跟我說：『再等一季』」）
+- 廣告、贊助商口播、片頭片尾寒暄照樣要順，不要自作主張刪掉；它們也是講者說的話
+
+**自我檢查（輸出前跑一次）**：把你寫的每一句話對回逐字稿。找不到出處的句子，刪掉。逐字稿裡有、但你沒寫的段落，補回去。
 
 ## 字幕品質與 ASR 錯誤處理（自動字幕與 Whisper 逐字稿必讀）
 
 逐字稿常是無標點的語音辨識輸出，同音錯字是常態。處理規則：
-- **中文同音亂詞**：依語境重建最合理的原話（「尻受症」→重訓、「同價」→銅價、「210 億」在講美股股價時是 210 美元）。重建沒把握的，保留原字，**嚴禁把不知所云的亂碼直接寫進文章**（「在有受訓加速的狀況下」這種中文不通的句子就是沒處理的證據）
-- **數字量級**：million＝百萬、billion＝十億、trillion＝兆；中文語音辨識常把量級聽錯，寫進文章前把同段數字放在一起檢查一次合理性
-- **引述內的省略號「……」只能省略同一段連續發言裡的枝節**：嚴禁把逐字稿不同位置、不同話題的句子拼進同一個「」引述——省略後主詞或指涉對象變了就是變造原話
+- **中文同音亂詞**：依語境重建最合理的原話（「尻受症」→重訓、「同價」→銅價）
+- **英文同音誤聽**：依語境重建（`trading` 在講模型時應是 `training`、`in-rack` 被聽成 `IMREC`）
+- ⚠️ **重建不出來就照原樣留著，並在後面標 `[ASR 存疑]`**。嚴禁把不知所云的亂碼當成通順句子寫出去，也嚴禁為了讓句子通順而自己編一個意思填進去
+- ⚠️ **把近似拼字「修正」成一個真實存在的專名，不等於修對**：先問語境需要的是機構名、產品名，還是普通詞。語境在講機櫃內的銅互連時，「IMREC」是 in-rack，不是研究機構 IMEC；改成 IMEC 句子直接變錯。沒把握時保留字幕原拼法
+- **數字量級**（極重要，最常錯）：million＝百萬、billion＝十億、trillion＝兆。`600 billion` 是「6,000 億」不是「600 億」；`3 million` 是「300 萬」不是「3 百萬」寫成「3 億」。同一段的數字寫完後放在一起檢查一次合理性
+- **講者沒講完的句子照留**（「他們早就... 」），不要替他補完整
 
-## 翻譯品質（當原始字幕非中文時——英文、日文、韓文等——此節極為重要）
+## 語言規範
 
-你的讀者是台灣的投資研究者，他們期待的是**專業、流暢、自然的繁體中文**，不是逐字硬翻。
+必須使用繁體中文，嚴禁任何簡體字。用詞可以用中國大陸的慣用說法（「軟件」「內存」「服務器」都可以），只要字形是繁體即可。
 
-⚠️ **引述翻譯規則**：講者的直接引述必須翻譯為中文，「」框住的內容必須是中文句子，禁止直接貼上原文整句（英文、日文、韓文等任何非中文）。但句中的專有名詞（人名、公司名、技術術語）保留英文，不要硬翻。
-- ✅ 正確：「Mythos 的網路戰能力已經危險到，每次你要求它逃離安全沙箱並想辦法傳訊息給你，它幾乎都能做到。」
-- ❌ 錯誤（貼英文原句）：「『anytime they try and give it a task like, "Hey, escape this secure sandbox and find a way to send me a message." It will almost always do so.』」
-- ❌ 錯誤（貼日文原句）：「電源がいらないセンサーなんです。どんなセンサーでもぶつけようとしてるんですけども」——整段日文假名沒翻，嚴禁。應譯成：「這是一種不需要電源的感測器，基本上想對應任何一種感測器。」
-- ❌ 錯誤（貼韓文原句）：「부품이 아니라 무기가 된 메모리 시장」——韓文諺文沒翻，嚴禁。應譯成：「記憶體已從零件變成武器。」
-- ❌ 也是錯誤（過度翻譯）：「密索斯的網路戰能力已經危險到...」（Mythos 不應音譯）
+專有名詞處理規則（非常重要，必須嚴格遵守）：
+- **人名**：首次出現用「中文（English）」格式，例如「黃仁勳（Jensen Huang）」。沒有常用中文名的直接用英文，例如「Sam Gardner」，不要音譯。
+  - ⚠️ **嚴禁張冠李戴**：不要根據職銜或角色猜中文名。字幕寫的英文名就是那個人，不要用你認為「更有名」的同職位人物替換。不確定某個英文名對應哪個中文名時，直接保留英文名。
+  - ⚠️ **頻道主／影片主角的本名以影片 metadata 為準**，不要信字幕的語音轉寫拼法（Paffrath 常被聽成 Praath）。字幕拼法查無此人、metadata 也確認不了時，寧可只寫角色（主持人／來賓），不要照抄可疑拼法，更不要腦補成讀音相近的名人。
+- **地名**：台灣讀者熟悉的用中文（美國、日本、台灣、亞利桑那州）；不熟悉的城市或地區直接用英文（Chandler），不要音譯成「錢德勒」。
+- **公司/機構名**：有公認中文名的用「中文（English）」，例如「台積電（TSMC）」「輝達（Nvidia）」。沒有公認中文名的直接用英文，例如「Amkor」「ASE」。
+- **技術名詞**：保留英文原名。**不解釋術語**：router、flops、prefill、decode、neocloud、token、HBM 這類圈內常用詞直接用，不加註解、不加括號說明。**順稿階段一律不補術語解釋**，那是替讀者補背景，不是順稿。
+- **絕對禁止**：把英文專有名詞硬翻成中文音譯。寧可保留英文。
+
+## 翻譯品質（原始字幕非中文時——英文、日文、韓文等——此節極為重要）
+
+輸出必須是**專業、流暢、自然的繁體中文**，不是逐字硬翻。整篇不得殘留任何非中文整句。
+
+⛔ **最高優先級鐵則**：
+1. **輸出全文必須是中文**。嚴禁把英文、日文、韓文原句照貼。**尤其嚴禁整段日文假名（ひらがな/カタカナ）或韓文諺文（한글）原樣照貼**。專有名詞（人名、公司名、技術術語）可保留英文原名。
+2. ❌ 錯誤（貼日文原句）：「電源がいらないセンサーなんです」——嚴禁。應譯成：「這是一種不需要電源的感測器。」
+3. ❌ 錯誤（貼韓文原句）：「부품이 아니라 무기가 된 메모리 시장」——嚴禁。應譯成：「記憶體已從零件變成武器。」
+4. ❌ 也是錯誤（過度翻譯）：「密索斯的網路戰能力」——Mythos 不應音譯。
 
 翻譯原則：
-1. **意譯優先，不要逐字直譯**：英文的句構和中文不同，翻譯時必須重組句子結構，讓中文讀起來自然。例如 "The amount of silicon they can put into a data center is limited by the amount of power" 不要譯成「他們可以放進資料中心的矽數量受到他們可用功率的限制」，而應該譯成「資料中心能容納多少晶片，取決於可用的電力」。
-2. **避免翻譯腔**：不要出現「這是一個...的問題」「在...的情況下」「基於...的原因」這類生硬的翻譯句式。用台灣人日常會說的方式表達。
-3. **技術語境要準確**：silicon 在半導體語境下是「矽晶片」或「晶片」，不是「矽」；package 是「封裝」不是「包裝」；die 是「晶粒」或「晶片」；bump 是「凸塊」；power 在晶片語境是「功耗」，在資料中心語境是「電力」。根據上下文選擇正確的翻譯。
-4. **引述的翻譯要自然**：講者的原話翻成中文後，要讀起來像一個中文母語者在說話，不是像在讀翻譯稿。可以適度調整語序和用詞，但不能改變原意。
-5. **專有名詞保留英文**：人名、公司名、技術術語保留英文原名，不要音譯。這條規則優先於翻譯規則——寧可在中文句子裡夾帶英文專有名詞，也不要創造讀者看不懂的音譯。
+1. **意譯優先，不逐字直譯**：英中句構不同，翻譯時重組句子結構讓中文自然。"The amount of silicon they can put into a data center is limited by the amount of power" 譯成「資料中心能容納多少晶片，取決於可用的電力」，不是「他們可以放進資料中心的矽數量受到他們可用功率的限制」。**重組句構不等於刪內容**：原句的每個資訊點都要在中文裡。
+2. **避免翻譯腔**：不要出現「這是一個...的問題」「在...的情況下」「基於...的原因」這類生硬句式。用台灣人日常會說的方式表達。
+3. **技術語境要準確**：silicon 在半導體語境是「晶片」不是「矽」；package 是「封裝」不是「包裝」；die 是「晶粒」；bump 是「凸塊」；power 在晶片語境是「功耗」，在資料中心語境是「電力」。
+4. **譯成人講話的樣子，不要升格成分析報告**：白話優先於書面語。「市場百分之百認為他們現在賺得太多」不是「市場認定公司的獲利高峰難以持續」；「狠得不得了」不是「工作極為勤奮」。講者講得直白就譯得直白，不要替他潤色成正式書面語，也不要替他降溫。
+5. **專有名詞保留英文**：這條優先於翻譯規則。寧可在中文句子裡夾英文專名，也不要創造讀者看不懂的音譯。
 
+## 破折號零容忍
 
+**一律不使用破折號（—、–、——）**，一個都不准出現，改用逗號或句號。
 
-⛔ **最高優先級格式鐵則（凌駕「保留原話」原則）**：
-1. 所有講者引述一律翻成自然繁體中文，用「」框住。**即使為了保留原意，也嚴禁輸出任何非中文整句（英文、日文、韓文等外語一律禁止）**；「」內只能是中文（人名、公司名、技術術語等專有名詞除外）。**尤其嚴禁整段日文假名（ひらがな/カタカナ）或韓文諺文（한글）原樣照貼**。
-2. **嚴禁使用 `>` markdown 引用塊**呈現講者原話。講者原話只能用「」。`>` 僅保留給極少數編者摘要。
-3. 若原話是英文、日文、韓文等任何外語，一律先在腦中翻成中文再寫進「」，不要先貼原文整句。
+## 覆蓋鐵則（與格式鐵則同級，漏段＝失敗）
+
+- **從第一句順到最後一句**，禁止跳過逐字稿中任何一段連續內容。**沒有「次要內容」這回事**：寒暄、廣告、閒聊、聽眾 QA、片尾致謝，全部照順
+- 你的輸出長度應接近逐字稿的資訊量。輸出明顯比逐字稿短，就是你漏了段落，不是你寫得精簡
+- 四種內容最常被模型當枝節丟掉，**必收**：
+  1. 講者的個人部位／利益揭露（「我早就下車了」「我自己沒有投入資金」「這是業配／不是業配」）
+  2. 反方例證與迷思澄清
+  3. 時事背景（某政策研議中、某事件剛發生）
+  4. 具體標的名、數據、時間表
 
 ## 輸出 JSON 格式（不要輸出任何其他內容）
 
 {
-  "title": "文章標題（論點導向，不超過30字，例如：Hassabis：AGI 五年內實現的可能性非常高）",
+  "title": "一句話說明這支影片在談什麼，不超過 30 字，例如：Gavin Baker 談 AI 賣壓、GPU 定價與信貸風險",
   "tags": ["標籤1", "標籤2", "標籤3"],
-  "filename_keywords": "2到3個關鍵字用底線連接，例如：AGI_DeepMind_運算力",
-  "topics": ["主題段落1", "主題段落2", "..."],
-  "article": "完整的 markdown 文章內容（不包含標題，從導言開始）"
+  "filename_keywords": "2到3個關鍵字用底線連接，例如：AI賣壓_GPU定價_信貸風險",
+  "article": "中文全文順稿（純文字段落，每段以說話人前綴開頭，段間空一行；不含標題、不含 markdown 小標）"
 }
-
-## 文章結構要求
-
-### 主題盤點（寫 article 之前先填 topics 欄位）
-- 動筆寫文章之前，先盤點這部影片談了哪些主題段落，列進 topics：影片資訊有章節標記時直接以章節為基準（瑣碎章節可合併），沒有章節就通讀逐字稿自行歸納
-- article 正文必須讓 topics 裡的每個主題至少有一個對應段落。不可以挑幾個主題寫、其他略過
-- 次要主題可以合併成一段簡短處理，但不能整個消失
-
-### 導言（通常 1-2 段）
-- 第一段：介紹講者/受訪者是誰——身份、職位、代表性成就。讓讀者知道「這個人是誰、為什麼該聽他說話」。
-- 視需要用一小段交代全文主線。不要列出後文將談的所有問題、觀點或關鍵字；小標與正文會自行展開。
-- ⚠️ 導言的背景資訊（本名、職稱、頭銜、訂閱數、成就）只能寫字幕或影片 metadata 撐得起的內容；不確定的背景寧可不寫，禁止憑記憶補。導言是憑空捏造的高發區，這裡的每個事實都要能指出出處。
-
-### 正文（依內容需要安排 ## 小標題）
-
-小標題必須是「論點式」，直接點出該段的核心觀點（例如：`## Scaling Laws 尚未觸頂`、`## 運算力仍是最大瓶頸`），不要用文學式標題（例如：`## 一場沒有將軍的圍棋`）。段落核心若有具體數字（目標價、漲幅、估值），把數字放進小標題，數字比形容詞更有力。
-
-不要套用固定段落模板。文章可使用轉述、直接引述、問答或兩者混合，依內容選擇最自然的形式。小標已經交代主題、說話人也清楚時，可以直接進入引述，不必為每段補一個引導句。
-
-**選材原則（文章精不精彩，九成取決於你選了哪些原話）：**
-- **不設定引述比例**。判斷每段內容適合直接引述或轉述，不要為了配額保留冗長口語，也不要把講者有辨識度的聲音全部磨成新聞摘要
-- **每個主要主題至少保留一段代表性直接引述**：選最能呈現講者語氣、論證方式或具體例子的原話。若全文幾乎只剩第三人稱轉述，即使資訊完整也算失敗；這條是講者聲音的品質下限，不是引述字數配額
-- 講者的比喻、具體故事、反問、俏皮話、立場強度與個人經驗優先保留為引述；流程說明、重複解釋與資訊密集但語氣普通的內容可準確轉述
-- **M3 的轉述權限要保守**：只有同一段連續發言裡、低歧義且語氣普通的流程或背景資訊可以轉述。涉及數字、否定、因果、比較、條件、時間順序、個人部位／利益揭露或立場強度時，優先保留為引述；不得把相隔很遠的發言拼成一段，也不得補上逐字稿沒有的因果、專名或概念
-- 訪談中的關鍵問答保留一來一往的形式：主持人問：「……」來賓答：「……」。不要把對話壓成單人陳述，訪談的張力常在問答之間
-- 保留引述時要維持完整意思與必要條件，可以刪除口頭贅字與同義反覆；轉述時不得降低語氣強度、改變立場或補上原文沒有的因果
-- 同一個觀點只選一種主要形式。直接引述已經講清楚時，不要在前後再摘要；採用轉述時，不要緊接一段內容相同的引述
-
-**串接原則（你自己寫的句子只能載「事實」，不能載「演出」）：**
-- 串接句的正當功能是「事實性鋪陳」：交代背景、點出這段話在回應什麼問題、補上對照數字。有資訊量的串接讓引述之間有敘事連貫，應該寫
-  - ✅「主持人接著問到點陣圖可能的變化。她回答：」
-  - ✅「三月的點陣圖還顯示今年降息一碼，他的判斷不同。他說：」
-  - ✅ 最簡形式「Peter 說：」「程凱補充：」永遠可用
-- **刪除測試**：把串接句整句拿掉。若讀者沒有失去說話人、必要背景、實際問題、時間順序或對照資訊，這句就沒有功能，直接刪除
-- **禁止內容預告與報雷**：不要寫「訪談同時追問另一個更即時的問題」「她的重點是後果承擔」「她點出另外兩個變數」「Wallace 先解釋為什麼中階主管首當其衝」「主持人開門見山問」。保留真正的問題或背景，刪掉「即將談什麼、這段重點是什麼、講者接下來要解釋什麼」的包裝
-- **禁止在引述前後複述內容（同話講兩遍，最常犯，務必根除）**：串接句不可以先用第三人稱預告下面引述；引述後也不可以再寫「她的重點是」「換句話說」「這表示」來解釋同一組要點。保留引述或轉述其中一種；只有新增必要背景、對照或後續影響時才另寫一句。
-  - ❌（串接複述了引述）：`Ritter 指出，當估值逼近 2 兆美元，未來每年需要約 1,000 億美元稅後淨利才能在 20 倍本益比下支撐。他說：「……當估值逼近 2 兆美元，要在 20 倍本益比下撐住，公司每年要有 1,000 億美元的稅後淨利……」`
-  - ✅（串接只給脈絡）：`談到 SpaceX 逼近 2 兆美元的估值該如何支撐，Ritter 說：「……當估值逼近 2 兆美元，要在 20 倍本益比下撐住，公司每年要有 1,000 億美元的稅後淨利……」`
-  - 判準要**逐句**跑，不是整段一起看：把串接句和緊接引述並排，串接裡**任何一句／子句**只要它的內容（要點、數字、順序）在下面引述裡已經有了，那一句就是複述，單獨砍掉。
-  - ⚠️ **混血串接是最大漏洞（務必根除）**：就算串接同段還有合法的獨有資訊（對照數字、背景），也不代表沒有複述——只要其中有一句在預告引述的論點，就砍那一句、只留獨有的那部分。整段因為含真數字而通過「刪了會少資訊」測試，會讓複述那一句搭便車過關，這正是過去漏抓的原因。
-  - ❌（混血：盈餘數字合法，但又預告了引述的季節性論點）：`Lee 回顧 2026 是連續第四年雙位數漲幅，歷史上連漲三年後第四年通常仍偏強。年初盈餘估 350，如今上修到 400，本益比反而降到 18.4。他說：「2026 正成為第四個雙位數漲幅的年份……連漲三年後第四年通常仍相當穩健……」`
-  - ✅（串接只留盈餘對照，季節性論點整個交給引述）：`年初 S&P 2027 盈餘估約 350 美元，如今上修到 400，本益比反而從 19.4 降到 18.4，漲了 9% 後更便宜。他說：「2026 正成為第四個雙位數漲幅的年份……連漲三年後第四年通常仍相當穩健……」`
-- **禁止在引述前加描述性過渡句或語氣評價**，例如「他把話說得很直接」「她用一個生動的比喻說明」「Peter 強調」「Clark 特別指出」。串接句不可以替講者的話打分、形容語氣、預告精彩度
-- **禁止「舞台指示／旁白」式串接（最常犯，務必根除）**：不要描寫對話的動作、節奏、戲劇性，或你自己的導演視角。鬥嘴段最容易犯，因為沒有事實可補，模型就改去報幕。以下這類一律禁止：
-  - ❌ 描寫語氣／動作：「Ian 笑著接：」「Ian 順著接：」「Tobias 馬上搭腔：」「Tobias 馬上吐槽：」「Tobias 再補一刀：」「Tobias 馬上接梗：」「Ian 苦笑：」
-  - ❌ 戲劇性／畫面感：「Ian 補了最後一刀：」「Ian 補了一個畫面：」「Tobias 補了一個細節：」
-  - ❌ 描寫對話走位：「Ian 接著把方向拉回科技業：」「Ian 又把梗接到 F1：」
-  - ❌ 替講者的表達打分：「Tobias 把數字講得更具體：」「Tobias 幫忙把這句話講得更直白：」
-  - ❌ 報幕用語（使用者明令零容忍，最常復發）：「補了一句」「補了一個」「補一刀」「笑著接」「順著接」「馬上吐槽」「話鋒一轉」「切入核心」這類描寫對話動作／節奏的旁白一律禁止，改用中性「說／接著說」或最簡並列
-  - ❌ 用「很直白／很直接／相當直接／講得更白」形容講者怎麼講話：直接寫他說了什麼，不要先替語氣打分
-  - 判準：把串接句遮起來只看引號內的話，笑點和張力還在嗎？在，那旁白就是多餘的。鬥嘴的喜感住在引號裡，不是旁白裡。
-- **引述動詞只能用中性詞**：引述前的動詞只准用「說、表示、指出、提到、認為、補充、回答、問、接著說」這幾個。**嚴禁使用帶評價、形容語氣或描寫動作的引述動詞**，包括但不限於：坦言、坦承、坦率地說、講得很坦白、直言、更直接地說、講得更白、一針見血、透露、爆料、強調、不諱言、語重心長地說、意味深長地說、笑著接、順著接、馬上搭腔、馬上吐槽、再補一刀、補了最後一刀、補了一個畫面、把數字講得更具體、把這句話講得更直白、把方向拉回、開玩笑、笑說、打趣、話鋒一轉、切入核心。這些動詞等於先替講者的話打分或替畫面加戲，再讓讀者看引述，會擋在讀者和原話之間。讓引述自己說話。
-- **快速來回的鬥嘴用「對話直述模式」**：當一段是純粹你來我往、沒有事實脈絡可補時，不要硬塞串接句，改用最簡並列讓兩句話自己對撞：
-  - ❌（加戲）`Ian 笑著接：「我想說全是 SAP HANA。」Tobias 馬上搭腔：「我本來也要說俄羅斯人和 SAP HANA。」`
-  - ✅（直述）`Ian 說：「我想說全是 SAP HANA。」Tobias 接著說：「我本來也要說俄羅斯人和 SAP HANA。」`
-  - 同一段密集對話時，連「說」都可省的更乾淨形式：`Ian：「……」Tobias：「……」`
-- **多人對談的歸屬紀律（歸屬錯誤是硬失敗，與數字錯誤同級）**：每句引述掛在誰名下，只能依字幕裡的說話者線索判定——`>>` 交替標記、講者自稱、互相稱名、上下文接話——嚴禁依「誰比較有名」「誰常講這類話」腦補。字幕線索不足、無法確定是誰說的，就寫「節目中提到」「兩人都同意」這類不指名的寫法，禁止硬掛人名。**嚴禁把兩位講者的話縫成同一段「」引述**：對話中一人接話，就拆成兩段引述各自具名。引述內若出現第三人稱線索（"he's saying"、「Elon 說會的」），代表這段是某人在轉述別人，不是被轉述者本人在說話，不要標成本人引述。
-- **禁止形容講者的問題或觀點**：不要寫「他丟出一個很尖的問題」「這是一個饒有深意的觀點」「他描述了一個令人不寒而慄的場景」這類評價。直接寫「他問：」「他的觀點是：」「他舉了一個例子：」
-
-### 結語（可省略，最多 1 段）
-- 正文已有自然收束時不要另寫結語。需要結語時，用 1-3 句收住全文，不要逐段重述，也不要寫金句式總結（「X 不僅是 A，更是 B」這類否定式排比）
-- 不要用「首先...其次...第三」的三段式結構
-- ⚠️ 結語只准總結正文已經出現的內容，嚴禁引入正文沒有的數據、主題或論點。結語提到的每個事實都必須能在上文找到；想放進結語的內容若正文沒有，先回頭補正文段落，不要只在結語出現。
-
-### 覆蓋鐵則（與格式鐵則同級，漏段＝失敗）
-- 文章要沿著逐字稿的順序推進，**禁止跳過逐字稿中任何一段連續內容（粗略 500 字以上）完全不處理**。次要內容（寒暄、廣告、與主題無關的閒聊）可以一句帶過或不寫，但講者任何有實質內容的論述段都必須在文章中有對應
-- 四種內容**必收、禁止當枝節丟掉**（它們最常被摘要模型刪掉，卻最影響讀者判讀）：
-  1. 講者的個人部位／利益揭露（「我早就下車了」「我自己沒有投入資金」「這是業配／不是業配」）
-  2. 反方例證與迷思澄清（講者說「大家以為 X，但其實是資訊落差」之類）
-  3. 時事背景（某政策研議中、某事件剛發生——沒有它，講者的評論會懸空）
-  4. 具體標的名、數據、時間表
-- 結尾的聽眾 QA 若含投資或產業內容，每題都要處理；純娛樂互動可略
-
-### 格式規範
-- 總字數跟著內容密度走。重要論點不能為了短而刪，但重複口語、內容預告、報幕、逐段摘要與同義反覆不算完整性，必須刪除。文章可以長，每一段都要對讀者有用
-- 不要使用粗體標記短語或概念。只在數據列表中使用粗體（例如指數名稱、金額）
-- 講者原話用「」呈現，不使用 > 引用塊（引用塊保留給編者評論或特別重要的一句話摘要）
-
-### 風格禁忌（非常重要，每一條都必須遵守）
-以下禁令管的是你自己寫的文字（導言、串接句、小標題、結語）。講者原話裡出現這些詞照譯，不要替講者降溫。
-- 不要大量使用破折號（——），改用逗號或句號
-- 不要用誇大形容詞：「前所未有的」「令人震驚的」「天壤之別」「至關重要」「開創性的」「驚人的」一律禁用
-- 不要用三段式列舉（A、B、C 三項並列），改為兩項或四項；但講者真的列了三項就照寫三項，嚴禁為了湊格式增刪內容
-- 不要用「此外」「值得注意的是」「更重要的是」等 AI 填充短語
-- 不要用「重新框定」句型當推進手段：「不是 A，而是 B」「不僅是 A，更是 B」「表面上是 A，深層是 B」「看似 A，其實 B」「你以為 A，其實 B」「真正的問題不是 A，而是 B」「關鍵不在於 A，而在於 B」「與其說 A，不如說 B」。這些句子多半是把同一件事換個框架再講一遍，沒有新資訊。判準：把前半句遮掉只留 B，讀者沒有任何損失，就直接講 B；只有前半句真的在糾正讀者會有的誤解（範圍限定、機制對比，例如「這並非所有變壓器都拉到這個長度，而是大型發電設施的某些核心設備」）才可以用。講者親口說的照譯，不受此限
-- 不要寫場景描寫式的開場（「在矽谷某棟不起眼的辦公樓裡...」「2026 年的某個清晨...」）"""
+"""
 
 
 def _escape_newlines_in_json_strings(s: str) -> str:
@@ -694,6 +643,35 @@ def _fabricated_english_entities(article: str, transcript: str, exempt: str = ""
     return flagged
 
 
+# ---- 引述計數口徑（與 humanizer-zh final_gate.py 的 quote_metrics 同源，改一邊記得改另一邊）----
+# ⚠️ 2026-08-06 起 /yt 產出的是「中文全文順稿」，通篇沒有「」引號，所以下面的
+# quote_metrics／_representative_quote_coverage／QUOTE_RATIO_FLOOR 已**不再**參與
+# format_violations。保留它們只為兩件事：(a) tests/test_yt_retry_selection.py 對
+# humanizer-zh final_gate.py 的同源口徑做 parity 驗證；(b) 下游 humanizer 成文階段
+# 仍以此口徑計算引述佔比。不要在 /yt 的閘門裡重新啟用。
+# 黃金範本（使用者手改）實測 63%，現行 humanizer 交付版 54%，舊 /yt 文章版 39%。
+_CJK_RE = re.compile(r"[㐀-鿿]")
+_QUOTE_RE = re.compile(r"「([^「」]*)」")
+_QUOTE_MIN_CJK = 6          # 引述則數只算引號內 CJK ≥ 6 字者，名詞碎片不算一則
+QUOTE_RATIO_FLOOR = 0.45    # 低於此值列為格式違規並觸發重生；目標是六成左右
+
+
+def quote_metrics(text: str) -> tuple[int, int, int]:
+    """統一口徑：回傳 (全文 CJK 字數, 引號內 CJK 字數, 引述則數)。
+
+    先剝 YAML frontmatter，再計數。本檔只此一處實作，不要在別處重寫。
+    """
+    body = re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.DOTALL)
+    total = len(_CJK_RE.findall(body))
+    quoted = count = 0
+    for quote in _QUOTE_RE.findall(body):
+        n = len(_CJK_RE.findall(quote))
+        quoted += n
+        if n >= _QUOTE_MIN_CJK:
+            count += 1
+    return total, quoted, count
+
+
 def _representative_quote_coverage(article: str) -> tuple[int, int]:
     """Count sections with one long quote or a substantive short exchange."""
     sections = re.split(r"(?m)^##\s+", article)[1:]
@@ -715,11 +693,72 @@ def _representative_quote_coverage(article: str) -> tuple[int, int]:
     return covered, len(main_sections)
 
 
-def format_violations(article: str) -> list:
-    """Check a generated article against the SYSTEM_PROMPT 格式鐵則.
+# ---------------------------------------------------------------------------
+# 順稿專用閘門：說話人前綴、編輯者的話、覆蓋率
+# ---------------------------------------------------------------------------
+
+# 說話人前綴：段首 24 字內的第一個全形/半形冒號之前那一段（「Baker：」「主持人：」）。
+# 排除引號與句末標點，避免把講者句子裡的冒號誤判成前綴。
+_SPEAKER_PREFIX_RE = re.compile(r"^([^：:\n「」，。？！；]{1,24})[：:]")
+
+
+def _narration_scope(article: str) -> str:
+    """順稿模式下「編輯者的話」的掃描範圍。
+
+    /yt 舊版是文章，講者原話都在「」裡，所以旁白掃描只要剔除「」即可。順稿沒有
+    「」——整篇都是講者的話——若照舊掃全文，講者自己講的「補上」「笑說」會被誤判
+    成報幕詞。故改成：有說話人前綴的段落只留前綴本身（抓「Baker 笑著接：」這種
+    夾在前綴裡的舞台指示），沒有前綴的段落＝編輯者插入的話或標題，整段掃。
+    """
+    out = []
+    for raw in article.split("\n"):
+        s = raw.strip()
+        if not s:
+            continue
+        m = _SPEAKER_PREFIX_RE.match(s)
+        out.append(m.group(1) if m else s)
+    return "\n".join(out)
+
+
+def _speaker_prefix_ratio(article: str) -> tuple[int, int]:
+    """回傳 (有說話人前綴的段落數, 總段落數)；用來抓「整篇寫成文章」。"""
+    paras = [p.strip() for p in re.split(r"\n\s*\n", article) if p.strip()]
+    prefixed = sum(1 for p in paras if _SPEAKER_PREFIX_RE.match(p))
+    return prefixed, len(paras)
+
+
+# ---- 順稿覆蓋率閘門（順稿最重要的一關）----
+#
+# 校準依據（2026-08-06，實測樣本
+# `2026-08-05_yt_Invest_Like_The_Best_AI_Selloff_GPU定價_信貸風險_transcript.txt`）：
+#   英文字幕 71,862 字元 / 13,329 英文詞 / 2,064 行。
+#   忠實中文順稿一般是 1.5–1.8 個中文字承載一個英文詞（去掉 uh/um 後取偏保守的
+#   1.6）→ 約 21,300 個中文字 → 中文字數 ÷ 字幕字元數 ≈ 0.30。
+#   下限取期望值的 60%（0.18）：漏掉四成以上內容才會被判違規並重生，正常輸出
+#   （0.26–0.34）離門檻還有很大距離；「只順了前三分之一」落在 0.10 左右，穩穩被抓。
+# 中文來源：順稿去掉語塞後約留 80–90% 的中文字，而中文字幕本身的 CJK 佔字元數
+#   約 85% → 期望比值 ≈ 0.72，下限同樣取六成 → 0.42。
+# 日韓來源：日／韓文譯成中文字數會縮，經驗值約原文字元數的 0.55 → 下限 0.32。
+# 分段太短時比例波動大（開場寒暄、廣告段），故 3,000 字元以下不檢查。
+COVERAGE_MIN_TRANSCRIPT_CHARS = 3_000
+
+
+def _coverage_floor(transcript: str) -> tuple[float, float, str]:
+    """回傳 (期望比值, 違規下限, 來源語言標籤)。比值＝成稿中文字數 ÷ 字幕字元數。"""
+    if len(_KANA_HANGUL_RE.findall(transcript)) >= 200:
+        return 0.55, 0.32, "日韓"
+    if len(re.findall(r"[一-鿿]", transcript)) > len(transcript) * 0.3:
+        return 0.72, 0.42, "中文"
+    return 0.30, 0.18, "英文"
+
+
+def format_violations(article: str, transcript: str = "") -> list:
+    """Check a generated 中文全文順稿 against the SYSTEM_PROMPT 鐵則.
 
     Returns human-readable violation descriptions (empty list = pass).
-    Mirrors the checks previously only run in _m3_test/ab_test_v3.py.
+
+    `transcript`：對應這段輸出的原始字幕（多段生成時是該 chunk 的字幕）。給了才會
+    跑覆蓋率閘門——順稿最重要的一關，抓「整段跳過」。留空則略過該項。
     """
     issues = []
     # An offending quote is English-majority AND contains a run of 4+
@@ -760,7 +799,19 @@ def format_violations(article: str) -> list:
         )
     blockquotes = re.findall(r"(?m)^>\s", article)
     if len(blockquotes) > 3:
-        issues.append(f"{len(blockquotes)} 行 > 引用塊（鐵則 2：講者原話只能用「」）")
+        issues.append(
+            f"{len(blockquotes)} 行 > 引用塊（順稿只用「說話人：內容」的段落，不用引用塊）"
+        )
+    # 破折號零容忍（與 humanizer-zh final_gate.py 的 DASH_RE 同源）。
+    # 只掃全形破折號與 en dash；ASCII `-` 是 markdown 清單與英文複合詞的合法字元，不列入。
+    dashes = re.findall(r"[—–]", article)
+    if dashes:
+        sample = next(
+            (l.strip()[:50] for l in article.splitlines() if re.search(r"[—–]", l)), ""
+        )
+        issues.append(
+            f"{len(dashes)} 處破折號（一律不使用破折號，改用逗號或句號），例如：{sample}"
+        )
     if re.search(r"[А-Яа-я]", article):
         issues.append("文章含西里爾字母（模型輸出異常）")
     if re.search(r"<think(?:ing)?>", article, re.IGNORECASE):
@@ -774,8 +825,9 @@ def format_violations(article: str) -> list:
     dupes = sum(1 for c in paras.values() if c > 1)
     if dupes:
         issues.append(f"{dupes} 個長段落重複出現（疑似內容拼接異常）")
-    # 串接區舞台指示／替講者語氣打分（引號內講者原話豁免：先剔除「」再檢查）
-    narration = re.sub(r"「[^「」]*」", "", article)
+    # 舞台指示／替講者語氣打分。掃描範圍見 _narration_scope：有說話人前綴的段落
+    # 只掃前綴本身（講者自己說的「補上」「笑說」不算違規），沒有前綴的段落整段掃。
+    narration = _narration_scope(article)
     # 分段後台資訊滲入成稿（chunk meta 洩漏）：模型把 part_info 的分段說明寫進文章
     meta_leak = re.search(
         r"逐字稿的(?:第[一1壹\d]|最後一|中間)段|後續段落|具體內容要等|這是完整逐字稿",
@@ -827,24 +879,33 @@ def format_violations(article: str) -> list:
             f"串接區用了白名單外的引述動詞（出現「{verb_hit}」，"
             "只准用 說／表示／指出／提到／認為／補充／回答／問／接著說）"
         )
-    quote_sections, main_sections = _representative_quote_coverage(article)
-    required_quote_sections = min(
-        main_sections,
-        max(1, (main_sections + 1) // 2),
-    )
-    if main_sections and quote_sections < required_quote_sections:
+    # 順稿不下小標：`##` 標題是「編輯者在分章」的鐵證。
+    headings = re.findall(r"(?m)^#{1,6}\s+\S", article)
+    if headings:
         issues.append(
-            f"只有 {quote_sections}/{main_sections} 個主要章節含實質直接引述；"
-            f"至少 {required_quote_sections} 個章節要保留能呈現講者語氣或論證方式的代表性原話，"
-            "可用單段 30 字，或同章至少兩段各 6 字以上、合計 30 字的短對話；"
-            "不可把全文磨成第三人稱摘要，也不可用名詞碎片湊數"
+            f"{len(headings)} 個 markdown 小標題（順稿不下小標、不分章，"
+            "只依字幕順序輸出「說話人：內容」段落）"
         )
-    redundant = _redundant_narration(article)
-    if redundant:
+    # 說話人前綴覆蓋：大多數段落都沒有前綴＝又寫成文章了。
+    prefixed, total_paras = _speaker_prefix_ratio(article)
+    if total_paras >= 5 and prefixed / total_paras < 0.6:
         issues.append(
-            f"{len(redundant)} 句在引述前預告或引述後重述同一內容，例如「{redundant[0]}」；"
-            "每個觀點只保留引述或轉述其中一種"
+            f"只有 {prefixed}/{total_paras} 段以說話人前綴開頭（低於 60%）；"
+            "順稿每段都要用「Baker：」「主持人：」這種前綴，"
+            "沒有前綴的段落多半是編輯者自己寫的導言、串接或總結，必須刪除"
         )
+    # ---- 覆蓋率閘門：順稿最重要的一關，抓「整段跳過」（校準見 _coverage_floor 上方註解）----
+    if transcript and len(transcript) >= COVERAGE_MIN_TRANSCRIPT_CHARS:
+        art_cjk = len(re.findall(r"[一-鿿]", article))
+        expected, floor, label = _coverage_floor(transcript)
+        ratio = art_cjk / len(transcript)
+        if ratio < floor:
+            issues.append(
+                f"覆蓋率不足：成稿只有 {art_cjk} 個中文字，字幕 {len(transcript)} 字元"
+                f"（比值 {ratio:.2f}，{label}來源期望約 {expected:.2f}、下限 {floor:.2f}）。"
+                "這代表你跳過了大段字幕。請從字幕第一句重新順到最後一句，"
+                "不要摘要、不要選材、不要壓縮，每一段講者說過的話都要有對應輸出"
+            )
     return issues
 
 
@@ -898,7 +959,8 @@ def _issue_score(issues: list) -> int:
         if any(
             marker in issue
             for marker in (
-                "實質直接引述",
+                "覆蓋率不足",
+                "說話人前綴",
                 "未翻譯",
                 "大量未翻譯外語",
                 "長段落重複",
@@ -1032,12 +1094,13 @@ def _redundant_narration(article: str) -> list:
 
 
 def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
-    """Generate an article from a transcript, enforcing the format gate.
+    """把一段逐字稿順成中文全文，並在生成迴路裡執行順稿閘門。
 
-    Calls MiniMax once, runs format_violations() on the result; on failure,
-    retries with the violation list appended to the prompt.  Selection considers
-    both rule compliance and content-retention proxies so a shorter, cleaner
-    retry cannot win after materially dropping topics and transcript-backed data.
+    Calls MiniMax once, runs format_violations() on the result (含覆蓋率閘門，
+    以本段字幕為分母)；on failure, retries with the violation list appended to the
+    prompt.  Selection considers both rule compliance and content-retention
+    proxies so a shorter, cleaner retry cannot win after materially dropping
+    transcript-backed data.
 
     Args:
         part_info: If non-empty, appended to the user prompt to guide split handling.
@@ -1061,9 +1124,12 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
     if chapters_text:
         chapters_section = f"\n- 章節標記：\n{chapters_text}"
 
-    user_prompt = f"""以下是一部 YouTube 影片的逐字稿，請根據內容撰寫一篇深度洞察文章。
+    user_prompt = f"""以下是一部 YouTube 影片的逐字稿，請把它順成通順的繁體中文全文。
 
-影片資訊：
+不要寫文章、不要選材、不要下小標、不要摘要。依字幕順序從第一句順到最後一句，
+每段以說話人前綴開頭（例如「主持人：」「講者：」）。
+
+影片資訊（只用來判斷說話人是誰、專名怎麼拼，不要拿來補背景知識）：
 - 標題：{metadata.get('title', 'Unknown')}
 - 頻道：{metadata.get('channel', 'Unknown')}
 - 發布日期：{metadata.get('upload_date', '未知')}
@@ -1073,7 +1139,7 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
 逐字稿內容：
 {transcript}{part_note}
 
-請用 JSON 格式輸出（嚴格遵守 system prompt 中的格式要求）。"""
+請用 JSON 格式輸出（嚴格遵守 system prompt 中的順稿規格）。"""
 
     # 初次 + 最多 2 次重試。日韓來源 MiniMax 有時整篇鏡像輸出原文，單次重試不夠，
     # 故迴路重試並保留「違規最少」的一版。
@@ -1093,30 +1159,19 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
                     + "、".join(sus[:12]) + ("…" if len(sus) > 12 else ""),
                     file=sys.stderr,
                 )
-        # 生成重試後仍殘留的引述前後複述：保留警告，供 humanizer 做語境裁決。
-        red = _redundant_narration(result.get("article", "")) if result else []
-        if red:
-            print(
-                "[note] 生成重試後仍有引述前後的疑似複述，humanizer 請逐句裁決，"
-                "同一觀點只保留引述或轉述其中一種："
-                + "；".join(f"「{r}…」" for r in red[:6]) + ("…" if len(red) > 6 else ""),
-                file=sys.stderr,
-            )
-        # 覆蓋率粗檢：成文 CJK 字數對逐字稿的比例太低＝疑似大幅跳段。純警告，
-        # 供 humanizer 覆蓋對帳（處理流程第 3 步）加嚴。門檻校準：股癌篇漏一半時
-        # 中文比例 0.28；正常全覆蓋中文應 ≥0.35，英文來源約 ≥0.08（字→詞換算）。
-        if transcript and result:
+        # 覆蓋率諮詢：硬閘門（format_violations）用的是「跳大段」的下限，這裡再印一次
+        # 實際比值，即使沒觸發重生，比值貼近下限也代表順稿偏薄，humanizer 覆蓋對帳
+        # （處理流程第 3 步）要逐段回字幕嚴查。
+        if transcript and result and len(transcript) >= COVERAGE_MIN_TRANSCRIPT_CHARS:
             art_cjk = len(re.findall(r"[一-鿿]", result.get("article", "")))
-            src_cjk = len(re.findall(r"[一-鿿]", transcript))
-            if src_cjk > len(transcript) * 0.3:
-                ratio, floor = art_cjk / max(src_cjk, 1), 0.35
-            else:
-                ratio, floor = art_cjk / max(len(transcript), 1), 0.08
-            if ratio < floor:
+            expected, floor, label = _coverage_floor(transcript)
+            ratio = art_cjk / max(len(transcript), 1)
+            if ratio < expected * 0.85:
                 print(
-                    f"[note] 覆蓋率偏低：成文 {art_cjk} CJK 字 vs 逐字稿 {len(transcript)} 字元"
-                    f"（比例 {ratio:.2f}，門檻 {floor}），疑似大幅跳段。"
-                    "humanizer 覆蓋對帳請逐主題嚴查並補回。",
+                    f"[note] 順稿覆蓋率偏低：成稿 {art_cjk} 中文字 vs 字幕 "
+                    f"{len(transcript)} 字元（比值 {ratio:.2f}，{label}來源期望約 "
+                    f"{expected:.2f}、重生下限 {floor:.2f}），疑似有跳段。"
+                    "humanizer 覆蓋對帳請逐段回字幕核對並補回。",
                     file=sys.stderr,
                 )
         return result
@@ -1128,34 +1183,29 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
         if attempt == 1:
             prompt = user_prompt
         else:
-            quote_repair = ""
-            if any("實質直接引述" in issue for issue in best_issues):
-                covered, total = _representative_quote_coverage(
-                    best.get("article", "") if best else ""
-                )
-                required = min(total, max(1, (total + 1) // 2)) if total else 1
-                quote_repair = (
-                    f"上一版只有 {covered}/{total} 個主要章節有實質引述。"
-                    f"這次請逐一檢查每個 ## 主要章節，至少讓 {required} 個章節保留"
-                    "能呈現講者語氣或論證方式的原話：單段至少 30 個中文字，或快速交鋒時"
-                    "同章至少兩段各 6 字以上、合計 30 字以上的短對話；"
-                    "原話翻成自然繁體中文後用「」框住，嚴禁改用 > 引用塊。"
-                    "不要只替名詞、產品名、介面文字或兩三字短例句加引號，那不算代表性引述。"
+            coverage_repair = ""
+            if any("覆蓋率不足" in issue for issue in best_issues):
+                coverage_repair = (
+                    "上一版跳過了大段字幕。這次請把字幕當成清單：從第一行開始，"
+                    "每一段講者說過的話都要有對應的中文輸出，順到最後一行為止。"
+                    "不要摘要、不要選材、不要只挑精華段，長度應接近字幕的資訊量。"
                 )
             prompt = user_prompt + (
-                "\n\n⚠️ 你上一次的輸出違反了格式鐵則：" + "；".join(best_issues) + "。"
-                + quote_repair
-                + "請重新輸出完整 JSON。最重要：**整篇文章（標題、導言、所有段落、引述）必須是繁體中文**，"
-                "嚴禁任何非中文整句或段落（英文、日文、韓文等外語，尤其嚴禁整段日文假名或韓文諺文原樣照貼，"
-                "也嚴禁用 \"…\" 或「」貼外語原句）；嚴禁 > 引用塊。"
-                "專有名詞（人名、公司名、技術術語）可保留英文，"
+                "\n\n⚠️ 你上一次的輸出違反了順稿鐵則：" + "；".join(best_issues) + "。"
+                + coverage_repair
+                + "請重新輸出完整 JSON。提醒："
+                "① 這是**中文全文順稿**，不是文章：不下 `##` 小標、不寫導言與結語、"
+                "不寫任何一句編輯者自己的話，每段以說話人前綴（「講者：」「主持人：」）開頭；"
+                "② **整篇必須是繁體中文**，嚴禁任何非中文整句或段落（英文、日文、韓文等外語，"
+                "尤其嚴禁整段日文假名或韓文諺文原樣照貼）；"
+                "③ 專有名詞（人名、公司名、技術術語）可保留英文，"
                 "但**只能用逐字稿裡實際出現的名字**——嚴禁憑記憶補出字幕沒有的"
-                "機構名、benchmark、產品名（例如把講者背景、公司、評測名「腦補」成你以為的那個）；"
-                "字幕沒提到確切名字時，用中性描述（如「一項評測」「一家資產管理公司」）帶過。"
+                "機構名、benchmark、產品名，也嚴禁猜說話人的名字；"
+                "字幕沒提到確切名字時，用中性描述（如「一項評測」「一家資產管理公司」「講者」）帶過。"
             )
         cand = _request_article(prompt, metadata)
         cand["article"] = _strip_model_artifacts(cand.get("article", ""))
-        cand_issues = format_violations(cand.get("article", ""))
+        cand_issues = format_violations(cand.get("article", ""), transcript)
         prefer, regressions = _prefer_retry_candidate(
             cand, cand_issues, best, best_issues, transcript
         )
@@ -1200,7 +1250,7 @@ def _request_article(user_prompt: str, metadata: dict) -> dict:
                     json={
                         "model": MINIMAX_MODEL,
                         "thinking": {"type": "disabled"},
-                        "max_tokens": 16384,
+                        "max_tokens": OUTPUT_TOKEN_BUDGET,
                         "system": SYSTEM_PROMPT,
                         "messages": [{"role": "user", "content": user_prompt}],
                     },
@@ -1348,7 +1398,7 @@ def _repair_translation(article: str, metadata: dict) -> "str | None":
                         json={
                             "model": MINIMAX_MODEL,
                             "thinking": {"type": "disabled"},
-                            "max_tokens": 16384,
+                            "max_tokens": OUTPUT_TOKEN_BUDGET,
                             "system": sys_prompt,
                             "messages": [{"role": "user", "content": user}],
                         },
@@ -1377,28 +1427,51 @@ def _repair_translation(article: str, metadata: dict) -> "str | None":
         return None
 
 
+# 單次呼叫的輸出預算（_request_article 的 max_tokens）。chunk 大小以它回推。
+OUTPUT_TOKEN_BUDGET = 16_384
+
+
 def _chunk_target_for(transcript: str) -> int:
     """依來源語言決定單次 MiniMax 呼叫的逐字稿長度上限。
 
     實測教訓（2026-07-11）：M3 的輸出預算（max_tokens 16384）撐不起大 chunk 的
     完整覆蓋——股癌 20.7k 中文單次呼叫只承載一半論點、Gavin Baker 2×33k 英文掉了
     8 個主題段。chunk 一大，模型必然壓縮取捨，「跳段偷懶」是結構性結果，不是
-    prompt 勸得回來的。切小段讓每段的成文空間充裕，才能做到全覆蓋。
+    prompt 勸得回來的。
+
+    2026-08-06 改順稿後重新校準（輸出長度不再被壓縮，會逼近輸入的資訊量，所以
+    舊的 chunk 值會撞上 16384 token 天花板被截斷）。以 1 個中文字 ≈ 1 token 保守估：
+
+      英文來源：實測樣本 71,862 字元 / 13,329 詞 → 5.39 字元/詞。順稿約 1.6 個中文字
+        承載 1 個英文詞。16,000 字元 ≈ 2,970 詞 → 約 4,750 中文字 → 連同 JSON 跳脫、
+        說話人前綴、title/tags 約 6,000–6,500 token，只用掉預算的 40%。（舊值 20,000
+        字元 → 約 5,940 中文字 → 7,500–8,000 token，仍安全但餘裕不足，翻譯偏長時會擦線。）
+      中文來源：順稿去掉語塞後留 80–90% 的中文字，幾乎 1:1。舊值 12,000 字元
+        → 約 10,000 中文字 → 11,000+ token，離 16,384 太近，必須下修。8,000 字元
+        → 約 6,800 中文字 → 約 7,500 token，餘裕 54%。
+      日韓來源：譯成中文約原文字元數的 0.55–0.6。舊值 18,000 → 約 10,000 中文字
+        → 11,000 token，同樣太近。12,000 字元 → 約 7,000 中文字 → 約 8,000 token。
     """
     if len(_KANA_HANGUL_RE.findall(transcript)) >= 200:
-        return 18_000          # 日韓來源（原有校準）
+        return 12_000          # 日韓來源
     cjk = len(re.findall(r"[一-鿿]", transcript))
     if cjk > len(transcript) * 0.3:
-        return 12_000          # 中文來源：資訊密度高（字＝詞），切最小
-    return 20_000              # 英文等其他來源
+        return 8_000           # 中文來源：資訊密度最高（字＝詞），切最小
+    return 16_000              # 英文等其他來源
+
+
+# 分段上限。順稿的 chunk 比舊版小（英文 16k／中文 8k／日韓 12k 字元），舊的上限 8
+# 會讓長影片被迫回到大 chunk（例：3 小時英文 podcast 約 150k 字元 ÷ 8 = 18.7k／段，
+# 超過目標）。放寬到 16 段：英文可覆蓋到 256k 字元、中文 128k，仍在單次 API 成本可控範圍。
+MAX_PARTS = 16
 
 
 def generate_article(transcript: str, metadata: dict) -> dict:
-    """生成文章。長逐字稿拆成多次 MiniMax 呼叫；chunk 大小依語言校準
+    """生成中文全文順稿。長逐字稿拆成多次 MiniMax 呼叫；chunk 大小依語言校準
     （見 _chunk_target_for）。最後對殘留假名／諺文做翻譯修補。"""
     chunk_target = _chunk_target_for(transcript)
     n_parts = ((len(transcript) - 1) // chunk_target + 1) if transcript else 1
-    n_parts = max(1, min(n_parts, 8))
+    n_parts = max(1, min(n_parts, MAX_PARTS))
 
     if n_parts == 1:
         result = call_minimax(transcript, metadata)
@@ -1407,23 +1480,19 @@ def generate_article(transcript: str, metadata: dict) -> dict:
         segments = _split_into_n(transcript, n_parts)
         n = len(segments)
         # 分段是後台資訊，嚴禁滲入成稿：2026-07-11 停損王篇 M3 曾把「因為這是逐字稿
-        # 的第一段，具體內容要等後續段落才會揭曉」寫進文章還自行推測未見的內容。
-        meta_ban = ("⚠️ 分段是後台資訊：文章裡嚴禁提及「逐字稿」「分段」「第 N 段」"
+        # 的第一段，具體內容要等後續段落才會揭曉」寫進順稿還自行推測未見的內容。
+        meta_ban = ("⚠️ 分段是後台資訊：輸出裡嚴禁提及「逐字稿」「分段」「第 N 段」"
                     "「後續段落」等字眼（講者親口說的除外），嚴禁替你沒看到的段落"
                     "寫預告或推測內容——只寫這段逐字稿裡實際有的東西。")
         chunks = []
         for i, seg in enumerate(segments):
-            if i == 0:
-                info = (f"【重要】這是完整逐字稿的第 1 段（共 {n} 段）。請正常撰寫文章，"
-                        "包含導言和正文段落。不要寫結語，後續段落會接在你的輸出之後。" + meta_ban)
-            elif i == n - 1:
-                info = (f"【重要】這是完整逐字稿的最後一段（第 {i+1}／{n} 段）。請直接從新的 "
-                        "## 段落標題開始，不要重複導言、不要再次介紹講者；可以寫結語。"
-                        "這些內容會接在前面段落之後。" + meta_ban)
-            else:
-                info = (f"【重要】這是完整逐字稿的中間段（第 {i+1}／{n} 段）。請直接從新的 "
-                        "## 段落標題開始，不要導言、不要結語、不要重複介紹講者。"
-                        "這些內容會接在前面段落之後。" + meta_ban)
+            info = (
+                f"【重要】這是完整逐字稿的第 {i+1}／{n} 段。"
+                "只順這一段，從這段的第一句順到最後一句，"
+                "不要導言、不要結語、不要總結、不要重複介紹講者。"
+                "你的輸出會直接接在前一段的輸出之後，所以第一段就從說話人前綴開始寫。"
+                + meta_ban
+            )
             chunks.append(call_minimax(seg, metadata, part_info=info))
             print(f"      第 {i+1}/{n} 段完成")
 
@@ -1476,7 +1545,7 @@ def save_article(
     youtube_url: str,
     output_dir: Path,
 ) -> Path:
-    """Format markdown with frontmatter and save to output directory."""
+    """Format the 順稿 as markdown with frontmatter and save to output directory."""
     today = datetime.now().strftime("%Y-%m-%d")
     channel_clean = sanitize_filename(metadata.get("channel", "Unknown"))
     keywords = sanitize_filename(article_data.get("filename_keywords", "摘要"))
@@ -1489,7 +1558,7 @@ def save_article(
     title_yaml = metadata.get('title', 'Unknown').replace('"', '\\"')
 
     frontmatter = f"""---
-type: yt_article
+type: yt_transcript_zh
 date: {today}
 source: YouTube
 youtube_url: {youtube_url}
@@ -1517,7 +1586,7 @@ tags: {tags_yaml}
 {article_data.get('article', '')}
 
 ---
-*本文根據 YouTube 影片內容由 AI 整理生成，僅供參考。*
+*本檔為 YouTube 影片字幕的中文全文順稿（AI 生成，未做編輯取捨），僅供參考。*
 """
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1534,7 +1603,7 @@ def main(
     transcript_file: str | None = None,
     lang_hint: str | None = None,
 ) -> str:
-    """Full pipeline: URL → transcript → article → saved file.
+    """Full pipeline: URL → transcript → 中文全文順稿 → saved file.
 
     If transcript_file is given (e.g. a Whisper transcript for a video whose
     subtitles are disabled), it is used directly instead of fetching subtitles,
@@ -1587,11 +1656,11 @@ def main(
     print(f"      標題: {metadata['title']}")
     print(f"      頻道: {metadata['channel']}")
 
-    print(f"[5/6] 呼叫 MiniMax API 生成文章...")
+    print(f"[5/6] 呼叫 MiniMax API 順稿...")
     article_data = generate_article(transcript, metadata)
-    print(f"      文章標題: {article_data.get('title', 'N/A')}")
+    print(f"      順稿標題: {article_data.get('title', 'N/A')}")
 
-    print(f"[6/6] 簡轉繁 + 儲存文章...")
+    print(f"[6/6] 簡轉繁 + 儲存順稿...")
     # OpenCC s2tw: 簡體→繁體（字形轉換）
     article_data["title"] = _S2TW.convert(article_data.get("title", ""))
     article_data["article"] = _S2TW.convert(article_data.get("article", ""))
@@ -1603,13 +1672,13 @@ def main(
         article_data[key] = article_data[key].replace("俬", "私")
         article_data[key] = _add_pangu_spacing(article_data[key])
     filepath = save_article(article_data, metadata, youtube_url, OUTPUT_DIR)
-    print(f"      文章已儲存: {filepath}")
+    print(f"      順稿已儲存: {filepath}")
 
     # Save English transcript alongside the article
     if en_transcript:
         transcript_path = filepath.with_name(filepath.stem + "_transcript.txt")
         transcript_path.write_text(en_transcript, encoding="utf-8")
-        print(f"      英文字幕已儲存: {transcript_path}")
+        print(f"      原文字幕已儲存: {transcript_path}")
 
     return str(filepath)
 
@@ -1617,7 +1686,7 @@ def main(
 if __name__ == "__main__":
     import argparse
 
-    ap = argparse.ArgumentParser(description="YouTube 影片 → 深度洞察文章")
+    ap = argparse.ArgumentParser(description="YouTube 影片 → 中文全文順稿")
     ap.add_argument("youtube_url", help="YouTube URL")
     ap.add_argument(
         "--transcript-file",
@@ -1632,4 +1701,4 @@ if __name__ == "__main__":
     )
     cli_args = ap.parse_args()
     result = main(cli_args.youtube_url, cli_args.transcript_file, cli_args.lang)
-    print(f"\n完成！文章已儲存至：{result}")
+    print(f"\n完成！順稿已儲存至：{result}")

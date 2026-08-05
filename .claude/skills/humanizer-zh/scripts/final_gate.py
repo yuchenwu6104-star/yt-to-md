@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""交付前機械清掃閘門（humanizer-zh 處理流程第 13 步 c）。
+"""交付前機械清掃閘門（humanizer-zh 流程第 4 步：fresh review ＋ gate ＋ 上傳）。
 
 用法：python3 final_gate.py <文章路徑>
 
@@ -43,11 +43,73 @@ META_LEAK_RE = re.compile(
 EDITORIAL_RE = re.compile(r"(?:很|相當|非常|十分|更)(?:直接|直白)")
 DASH_RE = re.compile(r"[—–]")
 REFRAME_RE = re.compile(r"而是|並非|而在於|與其說|表面上|更深層|你以為|看似|真正的")
+# [硬性] 編輯稽核口吻／免責平衡句：查核過程與免責聲明寫進正文，讀者要的是講者說了
+# 什麼，不是編輯替講者的話加註「這不算證據」。樣式刻意窄，且只掃引號外的串接區
+# （main() 先 _strip_quotes，講者自己說的限定語一律豁免）。
+# 來源：2026-08-05 Invest Like The Best 篇實際從成品刪掉的句子。
+AUDIT_TONE_RE = re.compile(
+    r"並非已(?:經)?落地的?(?:確定)?預測|"
+    r"不是(?:公司|官方)?財測|"
+    r"不代表每個.{0,12}都會|"
+    r"不是證明|"
+    r"這是.{0,8}轉述的.{0,8}假設|"
+    r"[只不]能證明|"
+    r"兩者是不同(?:指標|口徑)|"
+    r"屬於.{0,6}個人觀點|"
+    r"是.{0,8}的說法，不是"
+)
+AUDIT_PROSE_RE = re.compile(
+    r"這段話的主體是|"
+    r"(?:節目|影片|逐字稿|公司|官方(?:公告|文件|新聞稿)?)(?:中|裡|所)?"
+    r"[^。；\n]{0,24}(?:沒有|未)(?:提供|交代|公布|列出|說明)|"
+    r"[^。；\n]{1,24}(?:沒有|未)(?:提供|交代|公布|列出|說明)"
+    r"(?:這|該|其)?(?:項|個)?(?:財測|數據|算法|公式|範圍|細節|資料)|"
+    r"(?:SEC|官方|公司|財報|文件)[^。；\n]{0,20}(?:可確認|可核對)|"
+    r"逐字稿中|"
+    r"(?:出自|來自)[^。；\n]{0,18}(?:的說法|的口述|口徑)"
+)
+# 已升級為 [硬性] 的字樣（只能證明／不能證明／兩者是不同指標）不重複列在 [候選]
+DEFENSIVE_HEDGE_RE = re.compile(
+    r"只代表|不足以證明|不能因此|並不意味|"
+    r"不等於|不構成|不可視為|不能當成|很難被描述|"
+    r"仍待(?:後續)?(?:驗證|回答|實現)"
+)
 # 連續 4 個以上英文詞（非專名殘留候選；單一術語/人名不報）
 ENGLISH_RUN_RE = re.compile(r"[A-Za-z][A-Za-z'’\-]*(?:\s+[A-Za-z][A-Za-z'’\-]*){3,}")
 
 KANA_RE = re.compile(r"[぀-ゟ゠-ヿ]")
 HANGUL_RE = re.compile(r"[가-힣]")
+
+# ---- 引述計數口徑（本檔唯一實作；/yt yt_to_article.py 的 quote_metrics 同源，改一邊記得改另一邊）----
+# 黃金範本 references/golden-sample.md 實測 63%（含開頭說明段），現行交付版 54%，退化版 9%。
+CJK_RE = re.compile(r"[㐀-鿿]")
+QUOTE_RE = re.compile(r"「([^「」]*)」")
+QUOTE_MIN_CJK = 6          # 引述則數只算引號內 CJK ≥ 6 字者，名詞碎片不算一則
+QUOTE_RATIO_HARD = 0.45
+QUOTE_RATIO_SOFT = 0.60
+# 註：曾有「成品引述數 ≥ 原稿 × 0.7」的 [硬性]，前提是 /yt 原稿也是文章。/yt 改成產出
+# 中文全文順稿後（可能完全沒有「」或引號用法不同），這條必然誤判，已整條移除。
+
+
+def strip_frontmatter(text: str) -> str:
+    return re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.DOTALL)
+
+
+def quote_metrics(text: str) -> "tuple[int, int, int]":
+    """統一口徑：回傳 (全文 CJK 字數, 引號內 CJK 字數, 引述則數)。
+
+    先剝 YAML frontmatter，再用 CJK_RE / QUOTE_RE 計數。全檔只此一處實作，
+    不要在別處重寫（口徑不一致曾造成 20 vs 22 的爭議）。
+    """
+    body = strip_frontmatter(text)
+    total = len(CJK_RE.findall(body))
+    quoted = count = 0
+    for quote in QUOTE_RE.findall(body):
+        n = len(CJK_RE.findall(quote))
+        quoted += n
+        if n >= QUOTE_MIN_CJK:
+            count += 1
+    return total, quoted, count
 
 
 def _strip_quotes(s: str) -> str:
@@ -103,27 +165,6 @@ def _has_substantive_quote(p: str) -> bool:
     return any(len(quote) >= 15 for quote in re.findall(r"「([^「」]+)」", p))
 
 
-def representative_quote_coverage(article: str) -> tuple[int, int]:
-    """Count sections with one long quote or a substantive short exchange."""
-    sections = re.split(r"(?m)^##\s+", article)[1:]
-    main_sections = []
-    for section in sections:
-        heading = section.splitlines()[0].strip() if section.splitlines() else ""
-        if heading in {"導言", "結語"}:
-            continue
-        main_sections.append(section)
-    covered = 0
-    for section in main_sections:
-        quotes = re.findall(r"「([^「」]+)」", section)
-        quote_lengths = [len(re.findall(r"[一-鿿]", quote)) for quote in quotes]
-        dialogue_lengths = [length for length in quote_lengths if length >= 6]
-        if any(length >= 30 for length in quote_lengths) or (
-            len(dialogue_lengths) >= 2 and sum(dialogue_lengths) >= 30
-        ):
-            covered += 1
-    return covered, len(main_sections)
-
-
 def restatement_candidates(paras: list) -> list:
     """逐句版引述前預告與引述後解說偵測（模式 33）。
 
@@ -158,17 +199,6 @@ def restatement_candidates(paras: list) -> list:
                     or same_claim
                 ):
                     hits.append(f"{position}：{sent.strip()[:55]}")
-        for quoted in quotes:
-            sentences = [
-                sent.strip()
-                for sent in re.split(r"[。！？；]", quoted)
-                if sent.strip()
-            ]
-            for left, right in zip(sentences, sentences[1:]):
-                if _same_claim(left, right):
-                    hits.append(
-                        f"引述內自我複述：{left[:26]} ↔ {right[:26]}"
-                    )
     return list(dict.fromkeys(hits))
 
 
@@ -186,7 +216,7 @@ _ENTITY_STOPWORDS = frozenset({
 
 
 def _find_transcript(article_path: str) -> "str | None":
-    """自動尋找同名 `_transcript.txt`（與 SKILL.md 處理流程第 2 步同規則）。
+    """自動尋找同名 `_transcript.txt`（與 SKILL.md 流程第 1 步備齊來源同規則）。
     `xxx_humanized.md` 與 `xxx.md` 都對應 `xxx_transcript.txt`。"""
     import os
     base = re.sub(r"\.md$", "", article_path)
@@ -201,7 +231,7 @@ def transcript_checks(article: str, transcript: str) -> "tuple[list, list]":
     """拿字幕當 ground truth 的機械檢查。回傳 (hard, soft)。
 
     1. 覆蓋率粗檢（[候選]）：成文 CJK 字數對逐字稿比例過低＝疑似漏段，
-       覆蓋對帳（處理流程第 3 步）必須逐主題補查。
+       覆蓋（流程第 2 步對著逐字稿改稿）必須逐主題補查。
     2. 英文專名交叉核對（[候選]）：文章裡的英文專名在字幕完全對不上（含模糊
        比對），可能是捏造、也可能是把聽錯的字修成錯的專名（IMREC→IMEC 案）。
        與 /yt yt_to_article.py 的 _fabricated_english_entities 同源簡化版。
@@ -217,7 +247,7 @@ def transcript_checks(article: str, transcript: str) -> "tuple[list, list]":
         ratio, floor = art_cjk / max(len(transcript), 1), 0.08
     if ratio < floor:
         soft.append(
-            f"覆蓋率偏低（第 3 步覆蓋對帳加嚴）｜全文｜成文 {art_cjk} CJK 字 vs "
+            f"覆蓋率偏低（第 2 步覆蓋加嚴，逐字稿→文章方向再走一遍）｜全文｜成文 {art_cjk} CJK 字 vs "
             f"逐字稿 {len(transcript)} 字元，比例 {ratio:.2f} < 門檻 {floor}，疑似漏段"
         )
 
@@ -288,9 +318,21 @@ def main() -> int:
         m = META_LEAK_RE.search(stripped)
         if m:
             hard.append(f"分段後台資訊洩漏｜L{n}｜「{m.group(0)}」：{stripped.strip()[:50]}")
+        m = AUDIT_TONE_RE.search(stripped)
+        if m:
+            hard.append(
+                f"編輯稽核口吻／免責句（正文不放查核結論，整句刪）｜L{n}｜"
+                f"「{m.group(0)}」：{stripped.strip()[:60]}"
+            )
         m = REFRAME_RE.search(stripped)
         if m:
             soft.append(f"重新框定句型（模式9/35，三分類）｜L{n}｜「{m.group(0)}」：{stripped.strip()[:50]}")
+        m = AUDIT_PROSE_RE.search(stripped)
+        if m:
+            soft.append(f"查證報告侵入正文（模式36，刪句測試）｜L{n}｜「{m.group(0)}」：{stripped.strip()[:70]}")
+        m = DEFENSIVE_HEDGE_RE.search(stripped)
+        if m:
+            soft.append(f"編輯護欄／段尾辯護（模式36，三分類）｜L{n}｜「{m.group(0)}」：{stripped.strip()[:70]}")
         m = ENGLISH_RUN_RE.search(line)
         if m:
             soft.append(f"連續英文串（漏翻候選，模式29）｜L{n}｜{m.group(0)[:60]}")
@@ -308,16 +350,18 @@ def main() -> int:
     for r in restatement_candidates(paras):
         soft.append(f"引述前後複述候選（模式33，逐對遮字測試）｜｜{r}…")
 
-    quote_sections, main_sections = representative_quote_coverage(body)
-    required_quote_sections = min(
-        main_sections,
-        max(1, (main_sections + 1) // 2),
-    )
-    if main_sections and quote_sections < required_quote_sections:
+    total_cjk, quoted_cjk, _ = quote_metrics(text)
+    ratio = quoted_cjk / total_cjk if total_cjk else 0.0
+    if total_cjk and ratio < QUOTE_RATIO_HARD:
         hard.append(
-            f"講者聲音不足｜全文｜只有 {quote_sections}/{main_sections} 個主要章節含實質直接引述，"
-            f"至少需要 {required_quote_sections} 個；每章可用單段 30 字，或至少兩段各 6 字以上、"
-            "合計 30 字的短對話，名詞碎片不計；這是章節覆蓋下限，不是引述字數配額"
+            f"引述佔比過低｜全文｜引號內 {quoted_cjk}／全文 {total_cjk} CJK 字＝{ratio:.0%}"
+            f"（下限 {QUOTE_RATIO_HARD:.0%}，黃金範本 63%）；全文已被磨成第三人稱摘要，"
+            "先砍編輯者的話，再把講者的論證、比喻、判斷還原成直接引述"
+        )
+    elif total_cjk and ratio < QUOTE_RATIO_SOFT:
+        soft.append(
+            f"引述密度低於黃金範本（63%）｜全文｜引號內 {quoted_cjk}／全文 {total_cjk} CJK 字"
+            f"＝{ratio:.0%} < {QUOTE_RATIO_SOFT:.0%}；優先砍編輯者的話而不是加引述"
         )
 
     transcript = _find_transcript(sys.argv[1])

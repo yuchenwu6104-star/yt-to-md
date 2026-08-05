@@ -6,6 +6,11 @@
 
 預設 readPermission=guest（連結可看），writePermission=owner，commentPermission=everyone。
 HACKMD_API_TOKEN 讀取順序：先找 repo 根 .env，再回退 ~/.claude/.env（維持舊行為相容）。
+
+`_yt_*_humanized.md` 上傳前跑兩個機械檢查（見 `_quality_gate`）：final_gate [硬性] 清零、
+同名 `_audit.md` 存在且有實質內容（三節：改了什麼／查過但沒寫進正文的／覆蓋與遺留）。
+audit 的實質品質由 SKILL.md、fresh review 與 Root 驗收執行；本腳本不解析逐引述表格或
+欄位數，只擋「根本沒做」。
 """
 import argparse
 import json
@@ -25,80 +30,6 @@ for _p in Path(__file__).resolve().parents:
 from ytkit import config  # noqa: E402
 
 
-def _meaningful_quotes(content: str) -> list[str]:
-    body = re.sub(r"\A---\n.*?\n---\n", "", content, count=1, flags=re.DOTALL)
-    return [
-        quote
-        for quote in re.findall(r"「([^「」]+)」", body)
-        if len(re.findall(r"[\u3400-\u9fff]", quote)) >= 6
-    ]
-
-
-def _audit_evidence_errors(content: str, audit_text: str) -> list[str]:
-    """Validate that the audit proves a quote-by-quote cold read."""
-    errors = []
-    for section in range(1, 8):
-        if not re.search(rf"(?m)^##\s+{section}\.", audit_text):
-            errors.append(f"缺少 audit 第 {section} 節")
-    if (
-        re.search(
-            r"待 fresh reviewer|待獨立盲審|待盲審|尚待處理|未完成",
-            audit_text,
-            flags=re.IGNORECASE,
-        )
-        or re.search(r"\bTODO\b", audit_text, flags=re.IGNORECASE)
-    ):
-        errors.append("audit 仍含 provisional／待辦文字")
-
-    quote_count = len(_meaningful_quotes(content))
-    section_6_match = re.search(
-        r"(?ms)^##\s+6\.\s+.*?(?=^##\s+\d+\.|\Z)",
-        audit_text,
-    )
-    section_6 = section_6_match.group(0) if section_6_match else ""
-    marker = re.search(
-        r"逐引述掃描覆蓋：\s*(\d+)\s*/\s*(\d+)",
-        section_6,
-    )
-    if not marker:
-        errors.append("缺少「逐引述掃描覆蓋：N/N」")
-    elif tuple(map(int, marker.groups())) != (quote_count, quote_count):
-        errors.append(
-            f"逐引述掃描覆蓋數不符：audit={marker.group(1)}/{marker.group(2)}，"
-            f"成品實際={quote_count}"
-        )
-
-    expected_ids = [f"Q{index:02d}" for index in range(1, quote_count + 1)]
-    quote_rows = [
-        line
-        for line in section_6.splitlines()
-        if re.match(r"^\|\s*Q\d{2,}\s*\|", line)
-    ]
-    actual_ids = [
-        re.match(r"^\|\s*(Q\d{2,})\s*\|", line).group(1)
-        for line in quote_rows
-    ]
-    if actual_ids != expected_ids:
-        missing = [quote_id for quote_id in expected_ids if quote_id not in actual_ids]
-        extra = [
-            quote_id
-            for index, quote_id in enumerate(actual_ids)
-            if quote_id not in expected_ids or quote_id in actual_ids[:index]
-        ]
-        errors.append(
-            f"逐引述掃描表 ID 不完整或順序錯誤："
-            f"實際={actual_ids}，缺少={missing}，重複或多出={extra}"
-        )
-    malformed = []
-    for line in quote_rows:
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) != 6 or any(not cell for cell in cells):
-            malformed.append(cells[0] if cells else "未知")
-    if malformed:
-        errors.append(f"逐引述掃描表欄位不完整：{malformed}，每列必須有 6 個非空欄位")
-    return errors
-
-
 def load_env_token() -> str:
     token = config.hackmd_token()
     if not token:
@@ -113,10 +44,17 @@ def _quality_gate(file_path: Path) -> None:
     """_yt_ 成品上傳前的品質關卡（無 bypass，這是設計）。
 
     兩個條件缺一不可，否則直接拒絕上傳：
-    1. final_gate.py [硬性] 清零（機械規則：破折號、報幕詞、外語殘留、meta 洩漏…）
-    2. 同名 `_audit.md` 交付證據檔存在（覆蓋對帳表、引述回對、專名核對等七項——
-       證據落檔才能區分「查過沒漏」與「沒查」；2026-07-11 停損王篇教訓：
-       humanizer 表層修完就交件，意思反轉與 10 條漏段全靠事後盲審才撈回來）
+    1. final_gate.py [硬性] 清零（機械規則：破折號、報幕詞、外語殘留、meta 洩漏、
+       編輯稽核口吻…）
+    2. 同名 `_audit.md` 交付證據檔存在，且去除空白後長度 > 300 字元、備齊三節標題
+       （`## 1.` 改了什麼／`## 2.` 查過但沒寫進正文的／`## 3.` 覆蓋與遺留）、沒有
+       TODO 或待盲審之類的未完成字樣。證據落檔才能區分「查過沒漏」與「沒查」，
+       2026-07-11 停損王篇教訓：humanizer 表層修完就交件，意思反轉與 10 條漏段
+       全靠事後盲審才撈回來）
+
+    其餘一律放行。機械出口不解析逐引述表格、欄位數與覆蓋筆數，因為格式填滿
+    不等於查得正確；三節的實質內容仍由 fresh review 與 Root 按 SKILL.md
+    驗收，這裡只擋「根本沒做」。
 
     只擋 `_yt_*_humanized.md`；其他檔案（fb/invest/epub）維持原行為。
     """
@@ -138,22 +76,37 @@ def _quality_gate(file_path: Path) -> None:
     audit = file_path.with_name(
         file_path.name[: -len("_humanized.md")] + "_audit.md"
     )
-    if not audit.exists() or len(audit.read_text(encoding="utf-8").strip()) < 200:
+    audit_text = (
+        audit.read_text(encoding="utf-8") if audit.exists() else ""
+    )
+    if len(re.sub(r"\s", "", audit_text)) <= 300:
         sys.exit(
             f"拒絕上傳：交付證據檔不存在或過短（{audit.name}）。\n"
-            "依 humanizer-zh SKILL.md「交付清單」，七項證據（修改清單、引述回對表、"
-            "專名核對表、數字對帳、歸屬核對、朗讀證據、串接複述掃描）加覆蓋對帳表"
-            "必須先落檔為 _audit.md 才可上傳。沒有清單＝沒查，回去補做。"
+            "依 humanizer-zh SKILL.md 的 audit 契約，完整證據必須先落檔為 "
+            "_audit.md 才可上傳，去除空白後至少 300 字元。"
+            "沒有記錄＝沒查，回去補做。"
         )
-    content = file_path.read_text(encoding="utf-8")
-    audit_errors = _audit_evidence_errors(
-        content,
-        audit.read_text(encoding="utf-8"),
-    )
-    if audit_errors:
+    # 字數可以灌水（同一句重複三十次也能過 300 字），再加兩項廉價結構檢查。
+    missing = [
+        f"## {n}."
+        for n in (1, 2, 3)
+        if not re.search(rf"(?m)^\s*#{{1,4}}\s*{n}\s*[.、．]", audit_text)
+    ]
+    if missing:
         sys.exit(
-            "拒絕上傳：audit 只有格式或概括結論，沒有完成逐引述證據。\n- "
-            + "\n- ".join(audit_errors)
+            f"拒絕上傳：{audit.name} 缺少 audit 三節標題 {'、'.join(missing)}。\n"
+            "依 SKILL.md 的 audit 契約，必須有 "
+            "`## 1. 改了什麼`、`## 2. 查過但沒寫進正文的`、`## 3. 覆蓋與遺留` 三節。"
+        )
+    unfinished = [
+        w
+        for w in ("TODO", "待盲審", "待 fresh reviewer", "待fresh reviewer", "未完成", "尚待處理")
+        if w.lower() in audit_text.lower()
+    ]
+    if unfinished:
+        sys.exit(
+            f"拒絕上傳：{audit.name} 仍含未完成字樣（{'、'.join(unfinished)}）。\n"
+            "audit 是完工證據，不是待辦清單；先把該做的做完再改掉這些字樣。"
         )
 
 

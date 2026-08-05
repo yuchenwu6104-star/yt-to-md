@@ -34,3 +34,6 @@ _gen_*.log
 # 本地 scratch / 鏡像（衍生自已追蹤的 skill，不 commit）
 .agents/
 _m3_test/
+
+# agent 改稿前的本地備份（不入版控，git history 本身就是備份）
+backups/
