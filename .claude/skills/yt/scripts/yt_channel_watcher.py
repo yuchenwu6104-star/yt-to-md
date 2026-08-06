@@ -22,7 +22,16 @@ if hasattr(sys.stdout, 'reconfigure'):
 SCRIPT_DIR = Path(__file__).parent
 CHANNELS_FILE = SCRIPT_DIR / "channels.json"
 PROCESSED_FILE = SCRIPT_DIR / "processed_videos.json"
-ARTICLE_SCRIPT = SCRIPT_DIR / "yt_to_article.py"
+# 兩種產出模式，用環境變數切換（要退回舊版：把 YT_MODE 設成 article 或刪掉）：
+#   triage（預設）  ytmap/yt_triage.py：分流稿＋地圖＋帶行號逐字稿，不由模型寫文章
+#   article         yt_to_article.py：舊版，模型一次做完翻譯／結構／歸屬／專名／文筆
+# 換掉舊版的理由：同一集跑兩次，三整段虛構全部出現在「寫文章」那一步，
+# 而分段索引與專名標記那些工作它做得對。把模型的任務縮窄，錯就少了。
+_YT_MODE = os.environ.get("YT_MODE", "triage").strip().lower()
+ARTICLE_SCRIPT = (
+    SCRIPT_DIR / "yt_to_article.py" if _YT_MODE == "article"
+    else SCRIPT_DIR / "ytmap" / "yt_triage.py"
+)
 LOG_FILE = SCRIPT_DIR / "watcher.log"
 
 
@@ -180,7 +189,7 @@ def process_video(video_id: str, title: str, lang: str | None = None) -> bool:
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=1800,
+            cmd, capture_output=True, text=True, timeout=5400,
             encoding="utf-8", env=env
         )
         # 撈出翻譯修補 pass 的觸發紀錄（日韓來源殘留假名/諺文時才有），成功也記
