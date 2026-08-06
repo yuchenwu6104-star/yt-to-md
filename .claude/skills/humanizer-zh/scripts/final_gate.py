@@ -164,6 +164,40 @@ def _find_transcript(article_path: str) -> "str | None":
     return None
 
 
+def _find_glossary(article_path: str) -> set:
+    """讀同名 `_glossary.json`（專名查證那一關的產出），回傳可豁免的 token。
+
+    這關解掉一個反向誘因：ASR 把 Yudkowsky 聽成 `eleer`、Kokotajlo 聽成
+    `Daniel Cooktell`，查證後還原成正確拼法，正確拼法當然不在字幕裡，於是
+    「英文專名字幕查無」全部亮紅燈。**還原得越正確，閘門叫得越大聲**，
+    久了就會訓練出「不要改 ASR 錯字」的壞習慣。
+
+    名詞表登記過的還原結果視同已查證，不再報。沒登記卻也不在字幕裡的，
+    才是真正該看的那一批。
+    """
+    import json
+    import os
+    base = re.sub(r"\.md$", "", article_path)
+    for c in dict.fromkeys([_strip_product_suffix(base), base]):
+        p = c + "_glossary.json"
+        if not os.path.exists(p):
+            continue
+        try:
+            data = json.load(open(p, encoding="utf-8"))
+        except (ValueError, OSError):
+            return set()
+        out = set()
+        for e in data if isinstance(data, list) else []:
+            name = str(e.get("正確拼法", "")).strip()
+            if not name:
+                continue
+            for w in re.findall(r"[A-Za-z0-9]+", name.lower()):
+                out.add(w)
+            out.add(re.sub(r"[^a-z0-9]", "", name.lower()))
+        return out
+    return set()
+
+
 def _find_source_draft(article_path: str) -> "str | None":
     """尋找同目錄對應的 /yt 原始草稿（成品檔名剝掉後綴後的同名 `.md`）。"""
     import os
@@ -282,7 +316,7 @@ def fabricated_numbers(lines: list, transcript: str) -> list:
     return hits[:15]
 
 
-def transcript_checks(article: str, transcript: str) -> "tuple[list, list]":
+def transcript_checks(article: str, transcript: str, glossary: set = frozenset()) -> "tuple[list, list]":
     """拿字幕當 ground truth 的機械檢查。回傳 (hard, soft)。
 
     1. 覆蓋率粗檢（[候選]）：成文 CJK 字數對逐字稿比例過低＝疑似漏段，
@@ -326,6 +360,9 @@ def transcript_checks(article: str, transcript: str) -> "tuple[list, list]":
             continue
         seen.add(norm)
         if norm in exempt or bare in exempt:
+            continue
+        # 名詞表登記過的還原結果視同已查證（見 _find_glossary 的說明）
+        if norm in glossary or bare in glossary:
             continue
         if norm in tl or bare in tl_squashed:
             continue
@@ -426,8 +463,9 @@ def main() -> int:
         )
 
     transcript = _find_transcript(sys.argv[1])
+    glossary = _find_glossary(sys.argv[1])
     if transcript:
-        t_hard, t_soft = transcript_checks(text, transcript)
+        t_hard, t_soft = transcript_checks(text, transcript, glossary)
         hard.extend(t_hard)
         soft.extend(t_soft)
         for f in fabricated_numbers(lines, transcript):
