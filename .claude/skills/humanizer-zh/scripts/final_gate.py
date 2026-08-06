@@ -36,6 +36,16 @@ TONE_WORDS = (
     "暗示了", "透露了",
 )
 NONNEUTRAL_VERBS = ("坦言", "坦承", "直言", "不諱言", "爆料")
+# 後設查證語句：正文不得「談論文章自己」或「談論查證過程」。查證結果只能決定
+# 文章寫什麼，不能寫給讀者看（實測 1,194 篇成品有 16 篇中招，例：「因此本文不
+# 採用 1.7 TWh 這個單位」「字幕沒有點名這位提問者，本文不硬掛給 Nikhil」）。
+META_SELF_PHRASES = (
+    "本文不", "本文未", "文章不把", "文章未", "原字幕", "字幕拼法",
+    "未能查證", "字幕沒有", "字幕無法", "逐字稿顯示", "字幕顯示",
+    "未經獨立", "無法核對",
+)
+# 同家族但可能有正當用法（講者本人在談節目內容），維持 [候選] 交由判斷
+META_SELF_SOFT_PHRASES = ("節目沒有", "節目中未", "ASR")
 # /yt 分段後台資訊滲入成稿（chunk meta 洩漏）；引號內講者原話豁免
 META_LEAK_RE = re.compile(
     r"逐字稿的(?:第[一1壹\d]|最後一|中間)段|後續段落|具體內容要等|這是完整逐字稿"
@@ -131,16 +141,145 @@ _ENTITY_STOPWORDS = frozenset({
 })
 
 
+# 成品檔名的已知後綴；回推原稿與字幕檔名時要先剝掉（`..._v2.md` 曾誤找
+# `..._v2_transcript.txt` 而誤報「找不到字幕」）
+PRODUCT_SUFFIX_RE = re.compile(r"(?:_humanized|_v\d+|_final|_draft)+$")
+
+
+def _strip_product_suffix(base: str) -> str:
+    """去掉成品檔名的 `_humanized`／`_v2`／`_final`／`_draft` 後綴。"""
+    return PRODUCT_SUFFIX_RE.sub("", base)
+
+
 def _find_transcript(article_path: str) -> "str | None":
     """自動尋找同名 `_transcript.txt`（與 SKILL.md 處理流程第 2 步同規則）。
-    `xxx_humanized.md` 與 `xxx.md` 都對應 `xxx_transcript.txt`。"""
+    先剝掉成品後綴再找，找不到才退回舊規則（只剝 `_humanized`／原檔名）。"""
     import os
     base = re.sub(r"\.md$", "", article_path)
-    base = re.sub(r"_humanized$", "", base)
-    p = base + "_transcript.txt"
+    cands = [_strip_product_suffix(base), re.sub(r"_humanized$", "", base), base]
+    for c in dict.fromkeys(cands):
+        p = c + "_transcript.txt"
+        if os.path.exists(p):
+            return open(p, encoding="utf-8").read()
+    return None
+
+
+def _find_source_draft(article_path: str) -> "str | None":
+    """尋找同目錄對應的 /yt 原始草稿（成品檔名剝掉後綴後的同名 `.md`）。"""
+    import os
+    base = re.sub(r"\.md$", "", article_path)
+    stripped = _strip_product_suffix(base)
+    if stripped == base:
+        return None
+    p = stripped + ".md"
     if os.path.exists(p):
         return open(p, encoding="utf-8").read()
     return None
+
+
+# ---- 數字回字幕比對（捏造偵測）----
+
+_FULLWIDTH = str.maketrans("０１２３４５６７８９．，％", "0123456789.,%")
+_SCALES = {
+    "兆": 1e12, "億": 1e8, "萬": 1e4, "千": 1e3,
+    "trillion": 1e12, "billion": 1e9, "million": 1e6, "thousand": 1e3,
+}
+_NUM_RE = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(兆|億|萬|千|trillion|billion|million|thousand)?",
+    re.I,
+)
+# 年份、頁碼、名次一類的常見數字，命中不算訊號
+_NUM_ROUND_WHITELIST = frozenset({15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100})
+
+
+def _number_values(text: str) -> list:
+    """抓出數字，回傳 (原樣, 裸值, 帶單位換算值)。逗號千分位與全形先正規化。"""
+    out = []
+    for m in _NUM_RE.finditer(text.translate(_FULLWIDTH)):
+        try:
+            v = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        mult = _SCALES.get((m.group(2) or "").lower(), 1.0)
+        out.append((m.group(0).strip(), v, v * mult))
+    return out
+
+
+_ZH_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "兩": 2, "三": 3, "四": 4,
+              "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_ZH_UNITS = {"十": 10, "百": 100, "千": 1000}
+_ZH_BIG = {"萬": 1e4, "億": 1e8, "兆": 1e12}
+_ZH_NUM_RE = re.compile("[" + "".join(_ZH_DIGITS) + "".join(_ZH_UNITS) + "".join(_ZH_BIG) + "點]{2,}")
+
+
+def _zh_to_values(s: str) -> set:
+    """把中文數字串換算成值（中文字幕的 ASR 會把數字寫成漢字，不換算會全部誤報）。"""
+    if "點" in s:
+        head, _, tail = s.partition("點")
+        frac = "".join(str(_ZH_DIGITS[c]) for c in tail if c in _ZH_DIGITS)
+        big = next((_ZH_BIG[c] for c in tail if c in _ZH_BIG), 1.0)
+        base = max(_zh_to_values(head)) if head else 0.0
+        if frac:
+            base += float("0." + frac)
+        return {base * big}
+    total = section = 0.0
+    digit = None
+    last_big = None
+    for ch in s:
+        if ch in _ZH_DIGITS:
+            digit = _ZH_DIGITS[ch]
+        elif ch in _ZH_UNITS:
+            section += (1 if digit is None else digit) * _ZH_UNITS[ch]
+            digit = None
+        elif ch in _ZH_BIG:
+            section += digit or 0
+            total += section * _ZH_BIG[ch]
+            section, digit, last_big = 0.0, None, _ZH_BIG[ch]
+    vals = set()
+    if digit is not None:
+        section += digit
+    vals.add(total + section)
+    # 口語省略：「四萬四」＝44000，不是 40004；兩種解讀都放進 ground truth
+    if digit is not None and last_big and section == digit:
+        vals.add(total + digit * last_big / 10)
+    return vals
+
+
+def _num_key(v: float) -> str:
+    return f"{v:.6g}"
+
+
+def _num_whitelisted(v: float, scaled: float) -> bool:
+    if v != scaled or v != int(v):
+        return False
+    n = int(v)
+    return n <= 12 or 1900 <= n <= 2100 or n in _NUM_ROUND_WHITELIST
+
+
+def fabricated_numbers(lines: list, transcript: str) -> list:
+    """文章數字逐一回字幕比對，找不到的列成候選（抓整段捏造的數字）。
+
+    比對前先正規化：去逗號、全形轉半形，並把中文兆／億／萬與英文 trillion／
+    billion／million 換算成同一個絕對值（「7,000 億」＝ "700 billion"），
+    裸值與換算值任一命中就算過，寧可放過也不要用誤報淹沒訊號。
+    """
+    src = set()
+    for _, bare, scaled in _number_values(transcript):
+        src.add(_num_key(bare))
+        src.add(_num_key(scaled))
+    for m in _ZH_NUM_RE.finditer(transcript):
+        for v in _zh_to_values(m.group(0)):
+            src.add(_num_key(v))
+    hits, seen = [], set()
+    for n, line in lines:
+        for raw, bare, scaled in _number_values(re.sub(r"https?://\S+", "", line)):
+            if _num_key(bare) in src or _num_key(scaled) in src:
+                continue
+            if _num_whitelisted(bare, scaled) or raw in seen:
+                continue
+            seen.add(raw)
+            hits.append(f"L{n}｜{raw}：{line.strip()[:45]}")
+    return hits[:15]
 
 
 def transcript_checks(article: str, transcript: str) -> "tuple[list, list]":
@@ -228,6 +367,18 @@ def main() -> int:
             w = next((w for w in words if w in stripped), None)
             if w:
                 hard.append(f"{kind}｜L{n}｜「{w}」：{stripped.strip()[:50]}")
+        w = next((w for w in META_SELF_PHRASES if w in stripped), None)
+        if w:
+            hard.append(
+                "後設查證語句（判斷保留，刪掉交代理由的半句；查不到就不寫或改不指名寫法）"
+                f"｜L{n}｜「{w}」：{stripped.strip()[:50]}"
+            )
+        w = next((w for w in META_SELF_SOFT_PHRASES if w in stripped), None)
+        if w:
+            soft.append(
+                f"後設查證語句候選（確認是講者在談節目、不是文章在交代查證）｜L{n}｜"
+                f"「{w}」：{stripped.strip()[:50]}"
+            )
         m = EDITORIAL_RE.search(stripped)
         if m:
             hard.append(f"語氣打分｜L{n}｜「{m.group(0)}」：{stripped.strip()[:50]}")
@@ -266,11 +417,21 @@ def main() -> int:
             "合計 30 字的短對話，名詞碎片不計；這是章節覆蓋下限，不是引述字數配額"
         )
 
+    draft = _find_source_draft(sys.argv[1])
+    if draft and len(text) < len(draft) * 0.40:
+        soft.append(
+            f"壓縮比偏低（疑似壓縮成摘要）｜全文｜成品 {len(text)} 字元 vs 原稿 {len(draft)} 字元，"
+            f"比例 {len(text) / max(len(draft), 1):.2f} < 0.40，確認引述沒有被大量降級成轉述"
+            "（合併重複論點是允許的，本項只提醒不擋）"
+        )
+
     transcript = _find_transcript(sys.argv[1])
     if transcript:
         t_hard, t_soft = transcript_checks(text, transcript)
         hard.extend(t_hard)
         soft.extend(t_soft)
+        for f in fabricated_numbers(lines, transcript):
+            soft.append(f"數字字幕查無（捏造風險，逐一回字幕核對）｜{f}")
     else:
         soft.append("找不到同名 _transcript.txt｜｜無法做覆蓋率與專名交叉核對，"
                     "確認字幕檔存在或於交付清單註明")

@@ -44,9 +44,11 @@ def _quality_gate(file_path: Path) -> None:
        證據落檔才能區分「查過沒漏」與「沒查」；2026-07-11 停損王篇教訓：
        humanizer 表層修完就交件，意思反轉與 10 條漏段全靠事後盲審才撈回來）
 
-    只擋 `_yt_*_humanized.md`；其他檔案（fb/invest/epub）維持原行為。
+    只擋 `_yt_*.md`（含 `_humanized`／`_v2`／`_final` 等各版成品）；其他檔案
+    （fb/invest/epub）維持原行為。舊版只認 `_humanized.md` 結尾，`..._v2.md`
+    因此整條關卡都繞過去、沒有 `_audit.md` 也照傳，這裡一併補上。
     """
-    if "_yt_" not in file_path.name or not file_path.name.endswith("_humanized.md"):
+    if "_yt_" not in file_path.name or file_path.suffix != ".md":
         return
     import subprocess
 
@@ -61,9 +63,9 @@ def _quality_gate(file_path: Path) -> None:
             "拒絕上傳：final_gate [硬性] 未清零。回去修到重跑無輸出，不要嘗試繞過。\n"
             + (hard or r.stdout[-500:])
         )
-    audit = file_path.with_name(
-        file_path.name[: -len("_humanized.md")] + "_audit.md"
-    )
+    # 剝掉成品後綴再找 `<base>_audit.md`（與 final_gate 的 PRODUCT_SUFFIX_RE 同規則）
+    base = re.sub(r"(?:_humanized|_v\d+|_final|_draft)+$", "", file_path.stem)
+    audit = file_path.with_name(base + "_audit.md")
     if not audit.exists() or len(audit.read_text(encoding="utf-8").strip()) < 200:
         sys.exit(
             f"拒絕上傳：交付證據檔不存在或過短（{audit.name}）。\n"
