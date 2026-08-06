@@ -30,8 +30,15 @@ def _slug(metadata: dict) -> str:
     改用影片標題取前幾個詞——分流稿的檔名只要能認得出是哪一集就夠了。
     """
     import datetime
-    today = datetime.date.today().isoformat()
-    channel = re.sub(r"[^\w一-鿿]+", "_", metadata.get("channel", "Unknown")).strip("_")
+    # 排程改到 23:00 之後，跑出來的檔案是隔天早上讀的。晚間跑就掛隔天日期，
+    # 讓檔名跟「哪一天的功課」對齊。影片本身的日期不受影響（frontmatter 與
+    # 逐字稿都還在），這裡只是檔名。
+    now = datetime.datetime.now()
+    day = now.date() + datetime.timedelta(days=1) if now.hour >= 22 else now.date()
+    today = day.isoformat()
+    # 頻道名有的很長（含副標與引號），不截的話整條路徑會逼近 Windows 的
+    # 260 字元上限，工作目錄還要再往下疊一層。
+    channel = re.sub(r"[^\w一-鿿]+", "_", metadata.get("channel", "Unknown")).strip("_")[:40]
     title = metadata.get("title", "")
     words = re.findall(r"[\w一-鿿]+", title)
     keywords = "_".join(words[:6])[:60].strip("_") or "untitled"

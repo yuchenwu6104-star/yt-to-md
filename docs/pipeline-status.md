@@ -10,7 +10,7 @@
 ## 現在的樣子
 
 ```
-23:00  排程 YT Channel Watcher
+23:00  排程 YT Channel Watcher（22:00 之後跑的掛隔天日期，跨午夜前後一致）
          └ ytmap/yt_triage.py（每部影片）
              1 normalize_transcript.py  單行字幕 → 一句一行，行號是全流程錨點
              2 build_index.py           數字、拼字變體、廣告、未完成句（純 Python）
