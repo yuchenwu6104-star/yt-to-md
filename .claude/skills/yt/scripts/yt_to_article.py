@@ -54,6 +54,57 @@ def _add_pangu_spacing(text: str) -> str:
         result.append(line)
     return "\n".join(result)
 
+
+# ---- 破折號機械替換（寫檔前的最後一道，2026-08-06 實測後新增）----
+#
+# 為什麼不能只靠 format_violations 的破折號檢查：實測那支影片，閘門確實抓到了
+# 「4 處破折號」並觸發重生，但另外兩次重生只吐了 88 個中文字（覆蓋率 0.01），
+# 評分機制正確地選了「有破折號但內容完整」那一版，於是破折號原封不動留到成稿。
+# 使用者對破折號是零容忍，且「換成逗號」是純機械操作，不需要模型判斷 → 直接改寫。
+#
+# 保護：YAML frontmatter 的 `---` 分隔線與 markdown 水平線 `---` 是 ASCII hyphen，
+# 本來就不在 [—–] 字元類裡；但仍明確跳過 frontmatter 區塊與純符號行，避免日後
+# 有人把字元類擴大時誤傷。format_violations 的那條檢查保留當第二道防線。
+_DASH_RUN_RE = re.compile(r"[ \t]*[—–]+[ \t]*")
+# 破折號前後已有標點時直接刪除，不再補逗號（避免「重要，，」「（，」這種疊標點）
+_DASH_NEIGHBOR_PUNCT = frozenset("，。！？；：、,.!?;:「」『』（）()《》〈〉…“”\"'‘’")
+
+
+def _replace_em_dashes(text: str) -> str:
+    """把正文裡的 —／–／—— 一律換成全形逗號；前後已有標點則刪除該破折號。
+
+    不動 YAML frontmatter 的 `---` 與 markdown 水平線 `---`。
+    """
+    lines = text.split("\n")
+    out = []
+    in_frontmatter = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if i == 0 and stripped == "---":
+            in_frontmatter = True
+            out.append(line)
+            continue
+        if in_frontmatter:
+            if stripped == "---":
+                in_frontmatter = False
+            out.append(line)
+            continue
+        # markdown 水平線／分隔線（---、***、___、- - -）整行跳過
+        if len(stripped) >= 3 and set(stripped) <= {"-", "*", "_", " "}:
+            out.append(line)
+            continue
+
+        def _repl(m: "re.Match", _line: str = line) -> str:
+            prev = _line[:m.start()].rstrip()[-1:]
+            nxt = _line[m.end():].lstrip()[:1]
+            if not prev or not nxt or prev in _DASH_NEIGHBOR_PUNCT or nxt in _DASH_NEIGHBOR_PUNCT:
+                return ""
+            return "，"
+
+        out.append(_DASH_RUN_RE.sub(_repl, line))
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------------------
 # 設定：載入 ytkit.config（單一來源；import 時即載入 repo 根 .env）
 # ---------------------------------------------------------------------------
@@ -352,9 +403,16 @@ Baker：我們去年就看到這個訊號，那時候市場還完全不在意。
 Baker：沒有，我反而加碼。
 
 說話人怎麼定：
-- 逐字稿有 `>>` 換手標記時，`>>` 就代表換人講話，依上下文與影片 metadata（頻道名、標題、簡介）判斷是哪一位。
-- 判不出來是誰，就用「講者：」「主持人：」「來賓：」；兩位以上分不清時用「講者 A：」「講者 B：」。
-- ⚠️ **嚴禁猜名字**。逐字稿與影片 metadata 都沒出現過的人名，一個字都不准寫。寧可整篇都寫「講者：」，也不要掛錯人名。
+- **user prompt 會給你一份固定的說話人清單**（本集有哪幾位、各自是主持人還是來賓、怎麼辨識）。說話人前綴**只准用清單裡的標籤，一字不差地照抄**：不得自創新標籤、不得混用泛稱（同一篇裡不准一下寫「Baker：」一下寫「講者：」）、不得把兩個人合併成一個標籤。
+- ⚠️ **逐字稿裡的 `>>` 是字幕換行標記，不是換人**。YouTube 自動字幕每隔幾秒就插一個，數量遠多於實際換手次數（實測：一支只有兩個人的對談，2,064 行字幕裡有 253 個 `>>`）。**嚴禁拿 `>>` 判斷說話人**，也嚴禁把 `>>` 原樣寫進輸出。
+- 換手要用**內容線索**判斷：
+  1. 誰在提問、誰在回答（主持人問，來賓答；來賓也可能反問，但主體是答）
+  2. 自稱與被點名（「我們基金去年…」是來賓的部位；「Gavin，你怎麼看」代表下一段換 Gavin 講）
+  3. 講者專屬的經歷、職務、立場（誰管基金、誰做節目、誰去了哪場會）
+  4. 話題延續性（同一個論點沒講完就沒換人）
+- **長段獨白不要因為看到 `>>` 就切成兩個人**。一個人連講三五分鐘是訪談常態；沒有內容線索指向換人，就是同一個人繼續講。
+- 冷開場／片頭剪輯常是**來賓**先講一段金句，主持人才進來開場。不要預設「第一句一定是主持人」，看內容判斷。
+- ⚠️ **嚴禁猜名字**。逐字稿與影片 metadata 都沒出現過的人名，一個字都不准寫。清單給什麼標籤就用什麼標籤。
 - 同一人連續講很久時，可依話題換段，換段時重複前綴。**一個話題一段**，段落不要長到讀者迷路。
 
 ## 順稿的界線（全部規則的核心）
@@ -442,6 +500,159 @@ Baker：沒有，我反而加碼。
   "article": "中文全文順稿（純文字段落，每段以說話人前綴開頭，段間空一行；不含標題、不含 markdown 小標）"
 }
 """
+
+
+# ---------------------------------------------------------------------------
+# 4a. 說話人辨識前置步驟（切 chunk 之前跑一次，結果注入每一個 chunk）
+# ---------------------------------------------------------------------------
+#
+# 2026-08-06 實測缺陷：5 個 chunk＝5 次獨立 API 呼叫，彼此不知道對方用什麼標籤，
+# 同一篇因此出現「主持人：」102 次、「講者：」99 次、「Baker：」43 次三套並用。
+# 修法：切 chunk 前先用一次小呼叫把說話人釘死，再把清單注入每一個 chunk 的 prompt。
+# 這次呼叫失敗不得中斷整個流程，一律降級成 SPEAKER_FALLBACK。
+
+# 辨識失敗時的固定標籤。刻意不用「講者」這種泛稱：泛稱正是要消滅的問題。
+SPEAKER_FALLBACK = [
+    {"label": "主持人", "role": "主持人", "cue": "負責提問、開場與收尾"},
+    {"label": "來賓", "role": "來賓", "cue": "負責回答，分享自己的經歷與判斷"},
+]
+
+# 標籤長度上限（中文名／英文姓氏／角色詞都遠短於此），超過即視為模型吐了句子
+_SPEAKER_LABEL_MAX = 12
+_SPEAKER_MAX_COUNT = 4
+
+_SPEAKER_SYSTEM_PROMPT = """\
+你是逐字稿分析員。使用者給你一支 YouTube 影片的開頭字幕與 metadata，
+你的唯一任務：判斷這支影片有哪幾位說話人，並替每一位定一個固定的中文標籤。
+
+規則：
+- ⚠️ 字幕裡的 `>>` 是字幕換行標記，**不是換人**，數量遠多於實際換手次數，不得拿來數人頭。
+  請用內容線索判斷：誰在提問誰在回答、自稱與被點名、各自的職務與經歷。
+- ⚠️ **嚴禁猜名字**。只能用字幕或 metadata 裡實際出現過的名字。查無名字就用角色詞
+  「主持人」「來賓」，**不要用「講者」這種泛稱**（除非全片真的只有一個人在講）。
+- 人名用姓氏或常用稱呼即可（Gavin Baker → Baker；Patrick O'Shaughnessy → Patrick）。
+- label 不超過 12 個字，不含冒號、不含形容詞、不含括號。
+- 通常是 1 到 3 人。分不出來就回兩個人：主持人與來賓。
+
+輸出 JSON（不要輸出任何其他內容）：
+{"speakers": [
+  {"label": "Patrick", "role": "主持人", "cue": "節目主人，負責提問與開場"},
+  {"label": "Baker", "role": "來賓", "cue": "基金經理人，自稱管錢、回答問題"}
+]}
+"""
+
+
+def _normalize_speakers(raw) -> list | None:
+    """把模型回傳的 speakers 清洗成可用清單；不合格回 None（交給呼叫端降級）。"""
+    if isinstance(raw, dict):
+        raw = raw.get("speakers")
+    if not isinstance(raw, list) or not raw:
+        return None
+    out, seen = [], set()
+    for item in raw:
+        if isinstance(item, str):
+            item = {"label": item}
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or item.get("name") or "").strip()
+        label = label.strip("：:").strip()
+        # 標籤必須是名字或角色詞：不含換行、標點、句子
+        if not label or len(label) > _SPEAKER_LABEL_MAX:
+            continue
+        if re.search(r"[\s：:，。、！？；「」『』（）()\[\]{}]", label):
+            continue
+        if label in seen:
+            continue
+        seen.add(label)
+        out.append({
+            "label": label,
+            "role": str(item.get("role") or "").strip()[:12],
+            "cue": str(item.get("cue") or item.get("cues") or "").strip()[:80],
+        })
+        if len(out) >= _SPEAKER_MAX_COUNT:
+            break
+    return out or None
+
+
+def _identify_speakers(transcript: str, metadata: dict) -> list:
+    """切 chunk 前跑一次的說話人辨識。**任何失敗都降級成 SPEAKER_FALLBACK，不得拋錯。**
+
+    只餵字幕開頭約 6,000 字元（換手線索、自我介紹、被點名幾乎都在開場），max_tokens
+    刻意壓在 1024——這是一次便宜的前置呼叫，不是順稿呼叫。
+    """
+    if not transcript or not MINIMAX_API_KEY:
+        return SPEAKER_FALLBACK
+    head = transcript[:6_000]
+    user = (
+        f"影片資訊：\n"
+        f"- 標題：{metadata.get('title', 'Unknown')}\n"
+        f"- 頻道：{metadata.get('channel', 'Unknown')}\n"
+        f"- 簡介：{(metadata.get('description') or '')[:400]}\n\n"
+        f"字幕開頭：\n{head}\n\n"
+        f"請輸出 JSON 說話人清單。"
+    )
+    try:
+        with httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0)) as client:
+            r = client.post(
+                f"{MINIMAX_BASE_URL}/v1/messages",
+                headers={
+                    "x-api-key": MINIMAX_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": MINIMAX_MODEL,
+                    "thinking": {"type": "disabled"},
+                    "max_tokens": 1024,
+                    "system": _SPEAKER_SYSTEM_PROMPT,
+                    "messages": [{"role": "user", "content": user}],
+                },
+            )
+            r.raise_for_status()
+            data = r.json()
+        text = ""
+        for block in data.get("content", []):
+            if block.get("type") == "text":
+                text = block["text"]
+                break
+        text = re.sub(r"^```(?:json)?\s*\n?", "", (text or "").strip(), flags=re.MULTILINE)
+        text = re.sub(r"\n?```\s*$", "", text.strip()).strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", text, re.DOTALL)
+            parsed = json.loads(m.group()) if m else None
+        speakers = _normalize_speakers(parsed)
+        if speakers:
+            return speakers
+        print("[warn] 說話人辨識回傳無法解析，降級成 主持人／來賓", file=sys.stderr)
+    except Exception as e:
+        print(
+            f"[warn] 說話人辨識失敗（{type(e).__name__}: {e}），降級成 主持人／來賓",
+            file=sys.stderr,
+        )
+    return SPEAKER_FALLBACK
+
+
+def _speaker_directive(speakers: list) -> str:
+    """把說話人清單轉成注入每個 chunk prompt 的指令段落。"""
+    speakers = speakers or SPEAKER_FALLBACK
+    lines = []
+    for s in speakers:
+        role = s.get("role") or ""
+        cue = s.get("cue") or ""
+        head = f"「{s['label']}：」" + (f"（{role}）" if role else "")
+        lines.append(head + (f" 辨識線索：{cue}" if cue else ""))
+    labels = "、".join(f"「{s['label']}：」" for s in speakers)
+    return (
+        "【本集說話人（已固定，不可更動）】\n"
+        + "\n".join(f"- {l}" for l in lines)
+        + f"\n⚠️ 說話人前綴**只准用上面這 {len(speakers)} 個標籤**：{labels}。"
+        "不得自創新標籤、不得改寫、不得混用「講者」「講者 A」「來賓」這類泛稱"
+        "（除非它本來就在清單裡）。整篇從頭到尾同一個人只能有一種寫法。\n"
+        "⚠️ 換手用內容線索判斷（誰問誰答、自稱與被點名、各自的經歷與立場、話題延續性）。"
+        "字幕裡的 `>>` 是字幕換行標記、不是換人，**不得**拿來判斷說話人，也不得寫進輸出。"
+    )
 
 
 def _escape_newlines_in_json_strings(s: str) -> str:
@@ -727,20 +938,49 @@ def _speaker_prefix_ratio(article: str) -> tuple[int, int]:
     return prefixed, len(paras)
 
 
+def speaker_labels_used(article: str) -> "dict[str, int]":
+    """回傳 {說話人標籤: 出現段數}。抓「同一篇用了三套命名」用的。
+
+    只看段首前綴（`_SPEAKER_PREFIX_RE`），剝掉 YAML frontmatter，並跳過 markdown
+    標題與「原始影片」參照行（`> 原始影片：[...]` 也有冒號，不是說話人）。
+    """
+    from collections import Counter
+    body = re.sub(r"\A---\n.*?\n---\n", "", article, count=1, flags=re.DOTALL)
+    counts: "Counter[str]" = Counter()
+    for para in re.split(r"\n\s*\n", body):
+        s = para.strip()
+        if not s or s.startswith("#") or s.startswith(">") or "原始影片" in s.splitlines()[0]:
+            continue
+        m = _SPEAKER_PREFIX_RE.match(s)
+        if m:
+            counts[m.group(1).strip()] += 1
+    return dict(counts)
+
+
 # ---- 順稿覆蓋率閘門（順稿最重要的一關）----
 #
-# 校準依據（2026-08-06，實測樣本
-# `2026-08-05_yt_Invest_Like_The_Best_AI_Selloff_GPU定價_信貸風險_transcript.txt`）：
-#   英文字幕 71,862 字元 / 13,329 英文詞 / 2,064 行。
-#   忠實中文順稿一般是 1.5–1.8 個中文字承載一個英文詞（去掉 uh/um 後取偏保守的
-#   1.6）→ 約 21,300 個中文字 → 中文字數 ÷ 字幕字元數 ≈ 0.30。
-#   下限取期望值的 60%（0.18）：漏掉四成以上內容才會被判違規並重生，正常輸出
-#   （0.26–0.34）離門檻還有很大距離；「只順了前三分之一」落在 0.10 左右，穩穩被抓。
-# 中文來源：順稿去掉語塞後約留 80–90% 的中文字，而中文字幕本身的 CJK 佔字元數
-#   約 85% → 期望比值 ≈ 0.72，下限同樣取六成 → 0.42。
-# 日韓來源：日／韓文譯成中文字數會縮，經驗值約原文字元數的 0.55 → 下限 0.32。
+# ⚠️ 三種來源之中**只有英文經過實測校準**（見下），中文與日韓仍是估算值。
+#
+# 英文（2026-08-06 實測校準，樣本
+# `2026-08-06_yt_Invest_Like_The_Best_AI賣壓_GPU定價_信貸風險.md` ＋ 同名 _transcript.txt）：
+#   字幕 71,862 字元 / 13,329 英文詞 / 2,064 行；忠實順稿實得 16,467 個中文字。
+#   → 實測 16,467 ÷ 13,329 = **1.235 個中文字承載一個英文詞**（舊版憑感覺寫 1.6，
+#     高估三成，導致每個 chunk 都噴「覆蓋率偏低」的假警報）。取 1.25 保守值：
+#     5.391 字元/詞 ÷ ... → 期望比值 = 1.25 / 5.391 ≈ **0.23**，下限取六成 ≈ **0.14**。
+#   實測那篇的實際比值 0.229 落在期望值上，不再觸發 _finalize 的 [note]（門檻
+#   expected×0.85 = 0.195）；「只順了前三分之一」約 0.08，仍穩穩低於 0.14 被抓。
+# 中文（**未經實測，估算值**）：順稿去掉語塞後約留 80–90% 的中文字，而中文字幕本身的
+#   CJK 佔字元數約 85% → 期望比值 ≈ 0.72，下限取六成 → 0.42。
+# 日韓（**未經實測，估算值**）：日／韓文譯成中文字數會縮，經驗值約原文字元數的
+#   0.55 → 下限 0.32。
 # 分段太短時比例波動大（開場寒暄、廣告段），故 3,000 字元以下不檢查。
 COVERAGE_MIN_TRANSCRIPT_CHARS = 3_000
+
+# 英文順稿的中文字/英文詞係數。2026-08-06 實測 1.235，取 1.25。
+ZH_CHARS_PER_EN_WORD = 1.25
+# 同一樣本實測的英文字幕字元/詞比（71,862 / 13,329）
+EN_CHARS_PER_WORD = 5.39
+COVERAGE_FLOOR_FRACTION = 0.6      # 下限＝期望值的六成
 
 
 def _coverage_floor(transcript: str) -> tuple[float, float, str]:
@@ -749,16 +989,20 @@ def _coverage_floor(transcript: str) -> tuple[float, float, str]:
         return 0.55, 0.32, "日韓"
     if len(re.findall(r"[一-鿿]", transcript)) > len(transcript) * 0.3:
         return 0.72, 0.42, "中文"
-    return 0.30, 0.18, "英文"
+    expected = round(ZH_CHARS_PER_EN_WORD / EN_CHARS_PER_WORD, 2)          # 0.23
+    return expected, round(expected * COVERAGE_FLOOR_FRACTION, 2), "英文"  # 0.14
 
 
-def format_violations(article: str, transcript: str = "") -> list:
+def format_violations(article: str, transcript: str = "", speakers: list | None = None) -> list:
     """Check a generated 中文全文順稿 against the SYSTEM_PROMPT 鐵則.
 
     Returns human-readable violation descriptions (empty list = pass).
 
     `transcript`：對應這段輸出的原始字幕（多段生成時是該 chunk 的字幕）。給了才會
-    跑覆蓋率閘門——順稿最重要的一關，抓「整段跳過」。留空則略過該項。
+    跑覆蓋率閘門，順稿最重要的一關，抓「整段跳過」。留空則略過該項。
+
+    `speakers`：前置步驟 `_identify_speakers()` 辨識出的說話人清單。給了才會跑
+    「標籤種類數」閘門（抓一篇混用三套命名）。留空則略過該項。
     """
     issues = []
     # An offending quote is English-majority AND contains a run of 4+
@@ -886,6 +1130,31 @@ def format_violations(article: str, transcript: str = "") -> list:
             f"{len(headings)} 個 markdown 小標題（順稿不下小標、不分章，"
             "只依字幕順序輸出「說話人：內容」段落）"
         )
+    # `>>` 原樣漏進正文：字幕換行標記不該出現在成稿，且這種行必然沒套說話人前綴。
+    raw_marker_lines = [
+        l.strip() for l in article.splitlines() if l.lstrip().startswith(">>")
+    ]
+    if raw_marker_lines:
+        issues.append(
+            f"{len(raw_marker_lines)} 行以 `>>` 開頭（字幕換行標記原樣漏進正文，"
+            f"且沒有套上說話人前綴），例如：{raw_marker_lines[0][:50]}"
+        )
+    # 說話人標籤種類數：抓「同一篇混用三套命名」（主持人／講者／Baker 並用）。
+    # 容忍一個額外標籤（旁白／廣告口播之類）。只在有辨識結果時才跑。
+    if speakers:
+        used = speaker_labels_used(article)
+        allowed = len(speakers) + 1
+        if len(used) > allowed:
+            detail = "、".join(
+                f"{lab}（{n} 段）"
+                for lab, n in sorted(used.items(), key=lambda kv: -kv[1])
+            )
+            expected_labels = "、".join(s.get("label", "") for s in speakers)
+            issues.append(
+                f"用了 {len(used)} 種說話人標籤，超過辨識出的 {len(speakers)} 人＋1 的上限："
+                f"{detail}。本集說話人固定為 {expected_labels}，"
+                "只准用這些標籤，不得自創新標籤、不得混用「講者」這類泛稱"
+            )
     # 說話人前綴覆蓋：大多數段落都沒有前綴＝又寫成文章了。
     prefixed, total_paras = _speaker_prefix_ratio(article)
     if total_paras >= 5 and prefixed / total_paras < 0.6:
@@ -970,7 +1239,9 @@ def _issue_score(issues: list) -> int:
             )
         ):
             score += 4
-        elif "複述" in issue:
+        # 說話人標籤混用與 `>>` 漏進正文：比排版瑕疵嚴重（下游 humanizer 得逐段重判
+        # 歸屬），但低於覆蓋率——絕不能因為標籤乾淨就選了漏段的那一版。
+        elif "說話人標籤" in issue or "`>>` 開頭" in issue or "複述" in issue:
             score += 2
         else:
             score += 1
@@ -1093,7 +1364,12 @@ def _redundant_narration(article: str) -> list:
     return list(dict.fromkeys(hits))
 
 
-def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
+def call_minimax(
+    transcript: str,
+    metadata: dict,
+    part_info: str = "",
+    speakers: list | None = None,
+) -> dict:
     """把一段逐字稿順成中文全文，並在生成迴路裡執行順稿閘門。
 
     Calls MiniMax once, runs format_violations() on the result (含覆蓋率閘門，
@@ -1104,6 +1380,8 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
 
     Args:
         part_info: If non-empty, appended to the user prompt to guide split handling.
+        speakers: `_identify_speakers()` 的辨識結果。**每個 chunk 都要拿到同一份**，
+            否則各 chunk 各自命名，同一篇會出現三套標籤（2026-08-06 實測缺陷）。
     """
     if not MINIMAX_API_KEY:
         raise RuntimeError(
@@ -1124,10 +1402,15 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
     if chapters_text:
         chapters_section = f"\n- 章節標記：\n{chapters_text}"
 
+    speakers = speakers or SPEAKER_FALLBACK
+    speaker_block = _speaker_directive(speakers)
+
     user_prompt = f"""以下是一部 YouTube 影片的逐字稿，請把它順成通順的繁體中文全文。
 
 不要寫文章、不要選材、不要下小標、不要摘要。依字幕順序從第一句順到最後一句，
-每段以說話人前綴開頭（例如「主持人：」「講者：」）。
+每段以說話人前綴開頭。
+
+{speaker_block}
 
 影片資訊（只用來判斷說話人是誰、專名怎麼拼，不要拿來補背景知識）：
 - 標題：{metadata.get('title', 'Unknown')}
@@ -1195,7 +1478,10 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
                 + coverage_repair
                 + "請重新輸出完整 JSON。提醒："
                 "① 這是**中文全文順稿**，不是文章：不下 `##` 小標、不寫導言與結語、"
-                "不寫任何一句編輯者自己的話，每段以說話人前綴（「講者：」「主持人：」）開頭；"
+                "不寫任何一句編輯者自己的話，每段以上面那份固定清單裡的說話人前綴開頭"
+                "（"
+                + "、".join(f"「{s['label']}：」" for s in speakers)
+                + "，不得自創、不得混用泛稱，也不得把 `>>` 寫進正文）；"
                 "② **整篇必須是繁體中文**，嚴禁任何非中文整句或段落（英文、日文、韓文等外語，"
                 "尤其嚴禁整段日文假名或韓文諺文原樣照貼）；"
                 "③ 專有名詞（人名、公司名、技術術語）可保留英文，"
@@ -1205,7 +1491,7 @@ def call_minimax(transcript: str, metadata: dict, part_info: str = "") -> dict:
             )
         cand = _request_article(prompt, metadata)
         cand["article"] = _strip_model_artifacts(cand.get("article", ""))
-        cand_issues = format_violations(cand.get("article", ""), transcript)
+        cand_issues = format_violations(cand.get("article", ""), transcript, speakers)
         prefer, regressions = _prefer_retry_candidate(
             cand, cand_issues, best, best_issues, transcript
         )
@@ -1442,10 +1728,11 @@ def _chunk_target_for(transcript: str) -> int:
     2026-08-06 改順稿後重新校準（輸出長度不再被壓縮，會逼近輸入的資訊量，所以
     舊的 chunk 值會撞上 16384 token 天花板被截斷）。以 1 個中文字 ≈ 1 token 保守估：
 
-      英文來源：實測樣本 71,862 字元 / 13,329 詞 → 5.39 字元/詞。順稿約 1.6 個中文字
-        承載 1 個英文詞。16,000 字元 ≈ 2,970 詞 → 約 4,750 中文字 → 連同 JSON 跳脫、
-        說話人前綴、title/tags 約 6,000–6,500 token，只用掉預算的 40%。（舊值 20,000
-        字元 → 約 5,940 中文字 → 7,500–8,000 token，仍安全但餘裕不足，翻譯偏長時會擦線。）
+      英文來源：實測樣本 71,862 字元 / 13,329 詞 → 5.39 字元/詞。順稿實測 1.235 個
+        中文字承載 1 個英文詞（2026-08-06 校準，見 ZH_CHARS_PER_EN_WORD；此處原先寫
+        1.6 是估算值，高估三成）。16,000 字元 ≈ 2,970 詞 → 約 3,700 中文字 → 連同
+        JSON 跳脫、說話人前綴、title/tags 約 5,000 token，只用掉預算的 30%，餘裕充足，
+        故 16,000 這個值維持不動。
       中文來源：順稿去掉語塞後留 80–90% 的中文字，幾乎 1:1。舊值 12,000 字元
         → 約 10,000 中文字 → 11,000+ token，離 16,384 太近，必須下修。8,000 字元
         → 約 6,800 中文字 → 約 7,500 token，餘裕 54%。
@@ -1469,12 +1756,21 @@ MAX_PARTS = 16
 def generate_article(transcript: str, metadata: dict) -> dict:
     """生成中文全文順稿。長逐字稿拆成多次 MiniMax 呼叫；chunk 大小依語言校準
     （見 _chunk_target_for）。最後對殘留假名／諺文做翻譯修補。"""
+    # 說話人辨識必須在切 chunk **之前**跑，且同一份結果餵給每一個 chunk；否則
+    # 各 chunk 各自命名（實測：主持人 102 段／講者 99 段／Baker 43 段三套並用）。
+    speakers = _identify_speakers(transcript, metadata)
+    print(
+        "      說話人："
+        + "、".join(f"{s['label']}（{s.get('role') or '未標'}）" for s in speakers)
+        + ("（辨識失敗，降級為固定標籤）" if speakers is SPEAKER_FALLBACK else "")
+    )
+
     chunk_target = _chunk_target_for(transcript)
     n_parts = ((len(transcript) - 1) // chunk_target + 1) if transcript else 1
     n_parts = max(1, min(n_parts, MAX_PARTS))
 
     if n_parts == 1:
-        result = call_minimax(transcript, metadata)
+        result = call_minimax(transcript, metadata, speakers=speakers)
     else:
         print(f"      字幕共 {len(transcript)} 字元（chunk 上限 {chunk_target}），拆為 {n_parts} 段...")
         segments = _split_into_n(transcript, n_parts)
@@ -1493,10 +1789,24 @@ def generate_article(transcript: str, metadata: dict) -> dict:
                 "你的輸出會直接接在前一段的輸出之後，所以第一段就從說話人前綴開始寫。"
                 + meta_ban
             )
-            chunks.append(call_minimax(seg, metadata, part_info=info))
+            chunks.append(call_minimax(seg, metadata, part_info=info, speakers=speakers))
             print(f"      第 {i+1}/{n} 段完成")
 
         merged_article = "\n\n".join(c.get("article", "") for c in chunks)
+        # 合併後再驗一次標籤一致性：單一 chunk 各自看都合規，跨 chunk 才會露餡。
+        # 純 stderr 諮詢，不重生（重跑整篇太貴），交給 humanizer 統一。
+        merged_labels = speaker_labels_used(merged_article)
+        if len(merged_labels) > len(speakers) + 1:
+            print(
+                "[note] 合併後全篇用了 "
+                + str(len(merged_labels))
+                + " 種說話人標籤（"
+                + "、".join(f"{k}×{v}" for k, v in sorted(merged_labels.items(), key=lambda kv: -kv[1]))
+                + "），本集說話人只有 "
+                + "、".join(s["label"] for s in speakers)
+                + "。humanizer 請統一標籤並重判歸屬。",
+                file=sys.stderr,
+            )
         all_tags = list(dict.fromkeys(t for c in chunks for t in c.get("tags", [])))
         result = {
             "title": chunks[0].get("title", metadata.get("title", "")),
@@ -1588,6 +1898,11 @@ tags: {tags_yaml}
 ---
 *本檔為 YouTube 影片字幕的中文全文順稿（AI 生成，未做編輯取捨），僅供參考。*
 """
+
+    # 寫檔前的最後一道機械替換：破折號一律換成逗號（見 _replace_em_dashes 上方註解）。
+    # 放在這裡而非 main()，是為了讓 frontmatter 的 `---` 與文末水平線 `---` 都真的
+    # 走過保護邏輯，而不是靠「它們碰巧不在字元類裡」。
+    full_content = _replace_em_dashes(full_content)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     filepath.write_text(full_content, encoding="utf-8")
