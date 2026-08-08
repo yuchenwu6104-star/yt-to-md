@@ -175,9 +175,21 @@ metadata:
 
    ```yaml
    type: yt_triage
+   youtube_url: https://www.youtube.com/watch?v=...  # 出處，必須帶進成品
+   channel: "..."
+   video_title: "..."                 # 影片原標題，未經檔名截斷
+   upload_date: 2026-08-07
    map: <base>_map.json              # 地圖，查證資訊全在這
    transcript_lines: <base>_lines.txt # 帶行號的英文逐字稿，行號是全流程錨點
    ```
+
+   - **出處欄位一律原封轉錄進成品**，格式與 A／B 路的 `yt_article` 完全相同（`type: yt_article`、`date`、`source: YouTube`、`youtube_url`、`channel`、`video_title`、`tags`），正文第一行接：
+
+     ```
+     > 原始影片：[<video_title>](<youtube_url>) | <channel> | <upload_date>
+     ```
+
+     **`video_title` 抄 frontmatter 的，不要從檔名回推。** 檔名為了避開 Windows 路徑上限已經截斷過（實際踩過：成品標題寫成 `How Open Source Became AI's ...`，連刪節號一起抄進去）。分流稿沒有這些欄位時（2026-08-08 之前的舊檔），寫 `youtube_url: unknown` 並在交付清單註明缺出處，**不要猜網址、不要拿檔名充當標題**。
 
    - **分流稿本身不是素材，是使用者用來決定要不要做這一集的閱讀稿。** 它的規格跟成品相反（寧可長寧可雜、具體細節一律保留），而且是機器翻的。**不要拿它當寫作依據，也不要編輯它。** 寫文章的依據是 `transcript_lines` 指的英文逐字稿，中文只在你手上產生一次。
    - 可以用它做的事只有兩件：看使用者標記過的重點（如果有），以及快速掌握這集在講什麼好決定章節怎麼排。

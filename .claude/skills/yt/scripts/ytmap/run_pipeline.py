@@ -15,10 +15,17 @@
   <base>_map.json       給 humanizer，查證資訊全在這
   <base>_lines.txt      帶行號的英文逐字稿，行號是全流程的錨點
 
-用法：run_pipeline.py <_transcript.txt> <輸出目錄> [節目脈絡說明]
+用法：run_pipeline.py <_transcript.txt> <輸出目錄> [節目脈絡說明] [--url ...]
+
+影片 metadata（`--url` / `--title` / `--channel` / `--upload-date`）會寫進分流稿
+frontmatter。這不是裝飾：C 路的 humanizer 只讀分流稿與 lines.txt，metadata 不
+進 frontmatter 就等於整條線遺失了原始連結與真標題，成品只能從檔名回推（檔名
+為了避開 Windows 路徑上限已經截斷過），HackMD 上就沒有出處可點。
 """
 from __future__ import annotations
 
+import argparse
+import datetime
 import json
 import re
 import subprocess
@@ -43,12 +50,25 @@ def run(script: str, *args: str, produces: "Path | None" = None) -> None:
         raise SystemExit(f"{script} 失敗（exit {p.returncode}）")
 
 
+def _yaml_str(v: str) -> str:
+    """YAML 雙引號字串。影片標題常含引號與冒號，不跳脫會把 frontmatter 弄壞。"""
+    return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def main() -> None:
-    if len(sys.argv) < 3:
-        sys.exit(__doc__)
-    src = Path(sys.argv[1])
-    outdir = Path(sys.argv[2])
-    context = sys.argv[3] if len(sys.argv) > 3 else ""
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("transcript")
+    ap.add_argument("outdir")
+    ap.add_argument("context", nargs="?", default="")
+    ap.add_argument("--url", default="", help="YouTube 網址，寫進分流稿 frontmatter")
+    ap.add_argument("--title", default="", help="影片原標題（未經檔名截斷）")
+    ap.add_argument("--channel", default="")
+    ap.add_argument("--upload-date", default="", dest="upload_date")
+    args = ap.parse_args()
+
+    src = Path(args.transcript)
+    outdir = Path(args.outdir)
+    context = args.context
     if not src.exists():
         sys.exit(f"找不到字幕檔：{src}")
     outdir.mkdir(parents=True, exist_ok=True)
@@ -98,10 +118,23 @@ def main() -> None:
     (outdir / f"{base}_lines.txt").write_text(
         numbered.read_text(encoding="utf-8"), encoding="utf-8")
 
+    # 欄位名刻意跟舊版 `yt_article` 的 frontmatter 一致，下游（humanizer C 路、
+    # HackMD 上傳）兩條路才不必各寫一套讀法。
+    meta_lines = [f"date: {datetime.date.today().isoformat()}", "source: YouTube"]
+    if args.url:
+        meta_lines.append(f"youtube_url: {args.url}")
+    if args.channel:
+        meta_lines.append(f"channel: {_yaml_str(args.channel)}")
+    if args.title:
+        meta_lines.append(f"video_title: {_yaml_str(args.title)}")
+    if args.upload_date:
+        meta_lines.append(f"upload_date: {args.upload_date}")
+
     front = (
         "---\n"
         "type: yt_triage\n"
-        f"map: {base}_map.json\n"
+        + "".join(f"{l}\n" for l in meta_lines)
+        + f"map: {base}_map.json\n"
         f"transcript_lines: {base}_lines.txt\n"
         "note: 分流稿。用途是判斷這集要不要進 humanizer。查證資訊全在 map JSON，不在正文。\n"
         "---\n\n"

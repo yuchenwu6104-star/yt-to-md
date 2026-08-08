@@ -77,8 +77,15 @@ def main() -> None:
         f"節目：{metadata.get('channel', '')}，影片標題：{metadata.get('title', '')}。"
         "字幕可能是自動生成的，人名常被聽錯。"
     )
+    # metadata 除了餵給模型當脈絡，也要落進分流稿 frontmatter：C 路的下游只讀
+    # 分流稿，這裡不傳，成品就沒有原始連結可掛，標題也只能從截斷過的檔名回推。
+    canonical_url = f"https://www.youtube.com/watch?v={vid}"
     cmd = [sys.executable, str(HERE / "run_pipeline.py"),
-           str(transcript_path), str(outdir), context]
+           str(transcript_path), str(outdir), context,
+           "--url", canonical_url,
+           "--title", metadata.get("title", ""),
+           "--channel", metadata.get("channel", ""),
+           "--upload-date", metadata.get("upload_date", "")]
     raise SystemExit(subprocess.run(cmd, text=True).returncode)
 
 

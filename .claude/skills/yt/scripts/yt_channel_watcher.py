@@ -282,7 +282,9 @@ def main():
             vid = v["video_id"]
             title = v["title"][:60]
             dur_min = v["duration_seconds"] // 60
-            log(f"  ▶ [{dur_min}min] {title}")
+            # 連 video_id 一起記：log 是事後唯一能把成品檔案倒推回原始影片的地方，
+            # 只記標題的話，出處一旦沒進 frontmatter 就再也接不回來了。
+            log(f"  ▶ [{dur_min}min] {title} (id={vid})")
             success = process_video(vid, title, ch_lang)
             if success:
                 processed["video_ids"].add(vid)
