@@ -31,6 +31,12 @@ STAGE_PHRASES = (
     "開門見山", "先解釋為什麼", "點出另外",
     "另一個更即時的問題", "她的重點是", "他的重點是",
 )
+
+# 「補」字引述動詞只准用「補充」（使用者明令）。上面那張字面清單只收得到列舉過的
+# 變體，2026-08-08 那批實測漏掉「補了細節」（不帶「一」）與「補了一項事實」（量詞
+# 不在清單裡），兩次都是靠人眼在盲審抓到的。改用樣式收斂：「補了…」一律召回，
+# 「補充」因為中間沒有「了／上／述」不會誤命中。
+SUPPLEMENT_RE = re.compile(r"補了|再補一|補上|補述")
 TONE_WORDS = (
     "尖銳", "犀利", "一針見血", "毫不留情", "不留情面", "不客氣",
     "火力全開", "很簡潔", "很乾脆", "語帶保留", "語重心長", "意味深長",
@@ -413,6 +419,12 @@ def main() -> int:
             w = next((w for w in words if w in stripped), None)
             if w:
                 hard.append(f"{kind}｜L{n}｜「{w}」：{stripped.strip()[:50]}")
+        m = SUPPLEMENT_RE.search(stripped)
+        if m:
+            hard.append(
+                "「補」字引述動詞（只准用「補充」）"
+                f"｜L{n}｜「{m.group()}」：{stripped.strip()[:50]}"
+            )
         w = next((w for w in META_SELF_PHRASES if w in stripped), None)
         if w:
             hard.append(
