@@ -131,16 +131,19 @@ metadata:
 
 ### 入口 A：YouTube 網址（兩步做完）
 
-1. 先跑生成：
+1. 先跑生成，**走地圖版**（`ytmap/yt_triage.py`，2026-08-06 起排程實跑的那一支）：
    ```bash
-   /Users/slking/Documents/訪談摘要/.venv/bin/python \
-     "/Users/slking/Documents/訪談摘要/yt-to-md/.claude/skills/yt/scripts/yt_to_article.py" "<URL>"
+   python "<yt-skill-path>/scripts/ytmap/yt_triage.py" "<URL>"
    ```
-   記下輸出的文章路徑，並**保留 stderr 的全部 `[note]` 警告**（專名查無、串接複述、覆蓋率偏低），後面各步要逐筆處置。
-2. 記錄原稿路徑，後續只寫同名 `_humanized.md`，不得覆寫原始 `.md`。原始 `.md` 本身就是保留稿，不建立 `_raw.md` 或其他 Obsidian 副本。
-3. 對產出的文章走完整「處理流程」1–15 步（含第 2.5 步脈絡重構、第 3 步論點認領、`_audit.md` 落檔）。
+   - **路徑一律相對於 `/yt` 技能目錄自己解析，不要寫死絕對路徑。** 這行原本寫死成 Mac 的 `/Users/slking/...`，在 Windows 上直接跑不起來，agent 只能亂猜一條路徑去湊。
+   - **不要叫 `yt_to_article.py`。** 那是舊版，一次要模型做完翻譯／結構／歸屬／專名／文筆五件事，實測三整段虛構全部出現在那一步。要退回舊版才明確指定它。
+   - 影片沒有字幕（`TranscriptsDisabled`）或字幕端點被 IP 擋時，`yt_triage.py` 會自動落到本地 Whisper 轉錄，可能要數分鐘，不是當掉。
+   - 產出是三個檔（`_分流稿.md`、`_map.json`、`_lines.txt`），**不是文章**。記下 `_分流稿.md` 的路徑。
+2. 分流稿全程唯讀，成品另存 `_humanized.md`，不得覆寫或編輯上游任何一個檔。
+3. 讀分流稿 frontmatter 的 `type: yt_triage` → **走下方 C 路**，完整跑「處理流程」1–15 步（含第 2.5 步脈絡重構、第 3 步論點認領、`_audit.md` 落檔）。寫作依據是 `transcript_lines` 指的英文逐字稿，不是分流稿。
 4. **交付前的第 13 步（fresh eyes）必須派一個 fresh subagent 執行**，不准自己「當作別人的稿子」帶過——單篇模式也一樣，自己改的自己驗沒有鑑別力。
 5. 多個 URL 時，改走入口 B（每支影片先各自跑第 1 步生成，再進批次監督）。
+6. 成品的出處欄位（`youtube_url` / `video_title` / `channel` / `upload_date`）從分流稿 frontmatter 轉錄，規則見下方 C 路。
 
 ### 入口 B：批次監督模式（使用者貼多個路徑＋說「派 subagent、你來監督」）
 

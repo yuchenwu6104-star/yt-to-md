@@ -45,6 +45,40 @@ def _slug(metadata: dict) -> str:
     return f"{today}_yt_{channel}_{keywords}"
 
 
+def _acquire_transcript(vid: str, url: str, lang_hint: "str | None") -> str:
+    """英文軌 → 任何原文軌 → 本地 Whisper。三條都不通才放棄。
+
+    地圖層偏好英文軌（行號是全流程錨點，英文行的切分最穩），但不強制：日韓節目
+    常常沒有英文軌，只要有一份可以掛行號的原文就夠。
+
+    Whisper 這條是舊版 `yt_to_article.py` 就有的最終退路，地圖版當初漏抄，於是
+    「字幕被關掉」與「字幕端點被 IP 擋」兩種情況都變成靜默跳過——實測 2026-08-06
+    起 Moonshot 那集連兩晚卡在 TranscriptsDisabled，音訊其實抓得到。
+    """
+    en = yta.fetch_english_transcript(vid)
+    if en and len(en) >= 500:
+        return en
+
+    try:
+        other, lang = yta.fetch_transcript(vid)
+        if other and len(other) >= 500:
+            return other
+        print(f"[warn] 字幕過短（{lang}，{len(other or '')} 字元），改用 Whisper",
+              file=sys.stderr)
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] 字幕取得失敗（{type(e).__name__}），改用本地 Whisper 轉錄"
+              "（下載音訊，可能數分鐘）", file=sys.stderr)
+
+    try:
+        text, lang = yta._fetch_transcript_via_whisper(url, lang_hint)
+    except Exception as e:  # noqa: BLE001
+        sys.exit(f"抓不到字幕，Whisper 轉錄也失敗：{e}")
+    if not text or len(text) < 500:
+        sys.exit("Whisper 轉錄過短或為空，跳過")
+    print(f"[info] Whisper 轉錄完成：{len(text)} 字元｜語言 {lang}", file=sys.stderr)
+    return text
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description="YouTube → 分流稿＋地圖")
@@ -56,16 +90,9 @@ def main() -> None:
     vid = yta.extract_video_id(args.youtube_url)
     metadata = yta.fetch_metadata(vid)
 
-    en = yta.fetch_english_transcript(vid)
-    if not en:
-        # 沒有英文字幕就退回原字幕（日韓節目常見）。地圖層不要求英文，
-        # 只要求「有一份可以掛行號的原文」。
-        try:
-            en, _ = yta.fetch_transcript(vid)
-        except Exception as e:  # noqa: BLE001
-            sys.exit(f"抓不到字幕：{e}")
-    if not en or len(en) < 500:
-        sys.exit("字幕過短或為空，跳過")
+    # args.lang 由 watcher 依頻道 category 推導（日韓自動偵測容易把專名拆爛），
+    # 只在落到 Whisper 那條時生效。
+    en = _acquire_transcript(vid, args.youtube_url, args.lang)
 
     outdir = Path(args.outdir) if args.outdir else Path(yta.OUTPUT_DIR)
     outdir.mkdir(parents=True, exist_ok=True)

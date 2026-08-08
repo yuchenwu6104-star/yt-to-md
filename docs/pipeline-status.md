@@ -68,6 +68,14 @@ humanizer  SKILL.md ＋ references/ 分檔，各角色只載自己要的
 - **技能載入的是哪一份**：`~/.claude/skills/humanizer-zh` 已改成 junction 指向
   repo 的 `.claude/skills/humanizer-zh`。**副作用：切 git 分支會連 humanizer
   一起換掉**，切到 codex 那條就會拿到他們 15KB 的版本，而且沒有任何提示。
+- **換腳本時要連手動入口一起換。** 2026-08-06 換地圖版只改了 watcher 的
+  `ARTICLE_SCRIPT`，兩份 SKILL.md 裡的手動指令沒跟著改，於是排程跑新版、
+  手動 `/yt` 和 `/humanizer-zh <URL>` 跑舊版，整整兩天沒人發現（humanizer 那條
+  還寫死 Mac 絕對路徑，在 Windows 上根本跑不起來）。2026-08-08 已修。
+- **漏抄的退路不會報錯，只會靜默少做事。** 地圖版當初沒把舊版的 Whisper
+  fallback 抄過來，無字幕影片一律 `sys.exit`；`--lang` 也是 parse 了沒用。
+  Moonshot 那集因此連兩晚卡在 `TranscriptsDisabled`，log 只有一行「生成失敗」。
+  2026-08-08 已補齊（英文軌 → 原文軌 → Whisper）。
 - **備份不要放在 `~/.claude/skills/` 底下**，會被當成一個新技能列進技能清單。
 - **排程跑的是工作目錄「當下 checkout 的分支」**。切到一半的分支會直接上線。
 - **API key 的環境變數名不一致**：機器上是 `MINIMAX_API_KEY`（使用者環境變數），
