@@ -1,15 +1,22 @@
 ---
 name: yt
-description: "將 YouTube 影片字幕順成中文全文順稿（依字幕順序、說話人前綴、不選材不摘要），供 /humanizer-zh 據以寫成文章。當用戶貼上 YouTube 網址、提到要摘要 YouTube 影片、想把影片內容轉成文章、或使用 /yt 指令時觸發此技能。適用於任何 YouTube 訪談、演講、Podcast、分析影片。"
+description: "把 YouTube 影片字幕轉成地圖版三件組（中文分流稿＋查證地圖＋帶行號英文逐字稿），供 /humanizer-zh 據以寫成文章；模型不寫文章。當用戶貼上 YouTube 網址、提到要摘要 YouTube 影片、想把影片內容轉成文章、或使用 /yt 指令時觸發此技能。適用於任何 YouTube 訪談、演講、Podcast、分析影片。"
 ---
 
-# /yt — YouTube 影片轉中文全文順稿
+# /yt — YouTube 影片轉地圖版三件組
 
-把 YouTube 影片的字幕，透過 MiniMax M3 API 順成一份**忠實、完整、通順的繁體中文全文**，並自動存入 Obsidian vault。
+⚠️ **`/yt` 不寫文章。** 它把字幕拆成三個下游可以逐句回對的檔案，成文的工作全部交給 `/humanizer-zh`。
 
-⚠️ **`/yt` 不寫文章。** 它的職責只有兩件事：**不漏、不編**。選材、脈絡、敘事結構、引述取捨這些「成文」的工作，全部交給下游 `/humanizer-zh`。
+為什麼這樣分工：舊版一次要模型同時做翻譯、結構、歸屬、專名、文筆五件事，於是專名就用記憶填了。同一集跑兩次的天然對照顯示，三整段虛構全部出現在「寫文章」那一步，而分段索引、專名標記這些窄任務它做得對。把模型的任務縮窄，錯就少了。
 
-為什麼這樣分工：`/yt` 同時做搬運與寫作時，兩種錯誤會互相掩護——實測 Gavin Baker 篇，72k 字元英文字幕被壓成 3.3 萬中文字的文章，其中長出一整段字幕查無的捏造內容（H20 清庫存、6,000 億 capex 之類），而講者原話只佔 39%。把順稿與成文拆開後，humanizer 拿到的是一份可以逐句對回字幕的中間產物，幻覺無處藏。
+四層分工，每層只做自己最不會錯的事：
+
+| 層 | 誰做 | 做什麼 |
+|---|---|---|
+| 確定性 | 純 Python | 數字表、拼字變體分群、廣告偵測、未完成句。不呼叫模型，不會幻覺 |
+| 苦力 | MiniMax M3 | 分段、輪次、論點、引述候選、可疑專名。**跑兩次取交集** |
+| 分流 | 使用者 | 讀分流稿決定這集要不要做 |
+| 寫作 | `/humanizer-zh` | 讀英文逐字稿＋地圖寫文章。**中文只產生一次，出自最會寫中文的那層** |
 
 ## 使用方式
 
@@ -19,97 +26,100 @@ description: "將 YouTube 影片字幕順成中文全文順稿（依字幕順序
 
 ## 執行流程
 
-收到 YouTube URL 後，依序執行以下步驟：
-
 ### Step 1: 執行主腳本
 
-運行 bundled script 完成整個流程：
+**一定要用 venv 那支 python。** 這台機器沒有 `python`，系統 `python3` 缺 `httpx`，只有 venv 能跑：
 
 ```bash
 /Users/slking/Documents/訪談摘要/.venv/bin/python \
-  "<skill-path>/scripts/yt_to_article.py" "<YouTube URL>"
+  "<skill-path>/scripts/ytmap/yt_triage.py" "<YouTube URL>"
 ```
 
+`yt_triage.py` 介面跟舊版相容（同樣吃 URL 與 `--lang`）。它 `import yt_to_article` 重用抓字幕那一段（Whisper fallback、yt-dlp 退路、VTT 解析都沿用，不重寫），只換掉「叫模型寫文章」那一段；同時這個 import 會載入 `ytkit.config`，把 repo 根 `.env` 灌進 `os.environ`，子行程才拿得到 API key。
+
 腳本會自動：
-1. 解析 URL 提取 video_id
-2. 用 `youtube-transcript-api` 抓取字幕（優先：zh-TW → zh → en → 任何可用；字幕不可用時自動退到本地 Whisper 轉錄）
-3. 用 `yt-dlp --dump-json` 取得影片 metadata（標題、頻道、日期）
-4. **說話人辨識前置步驟**（`_identify_speakers()`，切段之前跑一次）：取字幕開頭 6,000 字元 + metadata，用一次小呼叫（`max_tokens=1024`）判定本集有哪幾位說話人、各自的標籤與辨識線索。**這份清單注入每一個 chunk 的 prompt**，各段才不會各自命名。辨識失敗一律降級成固定的 `主持人：`／`來賓：`（不用「講者」這種泛稱），不中斷流程
-5. 將字幕 + metadata + 說話人清單送入 MiniMax M3 API **順稿**：依字幕順序從頭順到尾，去語塞、修 ASR 誤聽、譯成自然繁中，**不選材、不摘要、不重排、不下小標、不補任何字幕沒有的內容**。長字幕依語言切段（英文 ~16k、中文 ~8k、日韓 ~12k 字元／段，最多 16 段），確保單段輸出不撞上 16,384 token 上限被截斷
-6. 格式化為 markdown（含 YAML frontmatter）；**寫檔前做一次破折號機械替換**（`—`／`–`／`——` 一律換成全形逗號，前後已有標點則直接刪除；不動 frontmatter 的 `---` 與 markdown 水平線），再存入 Obsidian vault
-7. **原文逐字稿一律另存 `<檔名>_transcript.txt`**（humanizer 對帳的 ground truth）
+1. 解析 URL 取 video_id，用 `youtube-transcript-api` 抓字幕（優先 zh-TW → zh → en → 任何可用；字幕不可用時退到本地 Whisper 轉錄）
+2. 用 `yt-dlp --dump-json` 取 metadata（標題、頻道、日期）
+3. **原文逐字稿一律另存 `<base>_transcript.txt`**（`final_gate.py` 與 humanizer 對帳的 ground truth）
+4. 把逐字稿與 metadata 交給 `ytmap/run_pipeline.py` 跑六步（下節）
 
 ### Step 2: 確認結果
 
-腳本執行完畢後，告知用戶：
-- 順稿標題
-- 儲存路徑
-- 字幕語言與長度
+告知使用者三件組路徑與體檢表（`health`）。三件組不是成品，是給人分流、給 humanizer 寫作用的中間產物。要拿到文章，接著跑 `/humanizer-zh <分流稿路徑>`（走 C 路）。
 
-順稿只是中間產物，不是成品。要拿到可讀的文章，接著跑 `/humanizer-zh <順稿路徑>`。
+## 六步管線（`ytmap/run_pipeline.py`）
 
-## 順稿規格
+```
+[1/6] normalize_transcript  單行字幕 → 一句一行。行號在這裡固定，是全流程的錨點
+[2/6] build_index           純 Python：數字表、拼字變體群、廣告、未完成句
+[3/6] map_minimax ×2        跑 A、B 兩份獨立地圖，各自再跑 dedupe_claims 合併重複論點
+[4/6] merge_maps            兩份合流，產體檢表
+[5/6] triage_minimax        寫中文分流稿
+[6/6] strip_markers         把查證標記從正文抽進 JSON
+```
 
-`<basename>.md` 的正文是**中文全文順稿**，不是文章：
+**為什麼跑兩次**：模型的錯是隨機的，規則管不了隨機性，但便宜的重複可以。兩份都標到的進 `claims_confirmed`，只有一邊標到的進 `claims_single` 並註明可靠度低。
 
-- 依字幕順序**從頭順到尾**，不選材、不摘要、不重排、不下小標、不寫串接句、不寫導言與結語
-- 用**說話人前綴行**呈現：`Baker：……` / `主持人：……`。標籤由前置的說話人辨識步驟**事先釘死並注入每個 chunk**，全篇只能用那份清單裡的標籤，不得自創、不得混用泛稱。辨識不出來時全篇統一用 `主持人：`／`來賓：`。**禁止猜名字**
-- ⚠️ **字幕裡的 `>>` 是字幕換行標記，不是換人**。自動字幕每隔幾秒插一個，數量遠多於實際換手次數（實測：一支只有兩個人的影片，2,064 行字幕裡有 253 個 `>>`）。換手一律用內容線索判斷：誰問誰答、自稱與被點名、講者專屬的經歷與立場、話題延續性。長段獨白不因 `>>` 切成兩個人；`>>` 也不得原樣寫進正文
-- 把口語順成通順繁中：去掉 uh/um、重複語塞，修掉 ASR 明顯亂詞（`training` 被聽成 `trading` 之類），但**不增刪講者的意思**
-- 逐段對應字幕，一個話題一段。長度**接近字幕的資訊量，不做壓縮**
-- **絕對不補字幕沒有的內容**：不補專名、不補數字、不補因果、不補背景知識。ASR 亂碼重建不出來就照原樣留著並標 `[ASR 存疑]`
-- 量級照樣要換算正確：million＝百萬、billion＝十億、trillion＝兆
-- 破折號零容忍
+**chunk 是 150 行，不要為了省呼叫次數放大。** 實測不是輸出吐不完（`max_tokens` 開到 65536 只用了 4000），是**輸入越長模型抽得越少**：150 行給 25 條論點，500 行給 24 條，800 行給 32 條。放大 chunk 會得到一份看起來完整、實際只抓到四分之一的地圖，而且從外觀看不出來。
 
-## 機械閘門（`format_violations()`，違規即重生，最多 3 次）
-
-順稿最重要的一關是**覆蓋率**：成稿中文字數 ÷ 字幕字元數低於下限即判違規並重生。門檻依來源語言分三段（**英文 0.14／中文 0.42／日韓 0.32**，期望值約 **0.23**／0.72／0.55），下限一律取期望值的六成，校準依據寫在 `_coverage_floor()` 上方註解。⚠️ **只有英文那組經過實測校準**（2026-08-06，Gavin Baker 篇實測 1.235 個中文字承載一個英文詞，舊值 1.6 高估三成，害每個 chunk 都噴假警報）；中文與日韓仍是估算值。
-
-其餘閘門：`##` 小標題、說話人前綴覆蓋率（< 60% 判為又寫成文章了）、**以 `>>` 開頭的行**（字幕換行標記漏進正文）、**說話人標籤種類數 > 辨識人數 + 1**（抓一篇混用三套命名）、舞台指示／報幕詞／語氣打分、非中性引述動詞、破折號、假名／諺文殘留、西里爾字母、`<think>` 殘留、JSON 殘留、長段落重複、分段後台資訊洩漏。
-
-破折號另有**寫檔前的機械替換**當第一道（閘門只是第二道防線）：實測顯示閘門雖抓到破折號並觸發重生，但另兩次重生內容嚴重殘缺，評分機制正確地選了「有破折號但內容完整」那版，破折號因而留到成稿。換逗號是純機械操作，不該交給模型。
-
-stderr 的 `[note]` 保留三類需要人／下游裁決的訊號：字幕查無對應的英文專名（可能是捏造，也可能只是字幕拼錯）、覆蓋率雖未觸發重生但偏低的提醒，以及**多段合併後全篇標籤種類仍超標**（單段各自看都合規、跨段才露餡；不重生，交 humanizer 統一）。
+**可續跑**：地圖與分流稿是最貴的兩步（一集長談的 API 呼叫以十分鐘計），每步檢查產物存在就跳過。要重做就刪工作目錄 `.{base}_work/`。
 
 ## 輸出格式
 
-順稿存入：`.env` 的 `YT_OUTPUT_DIR`（本機為 `/Users/slking/Documents/Obsidian Vault/投資筆記/每週總結/每日研究`）
+存入 `.env` 的 `YT_OUTPUT_DIR`（本機為 `/Users/slking/Documents/Obsidian Vault/投資筆記/每週總結/每日研究`）。
 
-檔名格式：`YYYY-MM-DD_yt_頻道名_主題關鍵字.md`
+```
+<base>_分流稿.md     中文分流稿，給人讀，用來決定這集要不要做
+<base>_map.json      地圖，查證資訊全在這，給 humanizer
+<base>_lines.txt     帶行號的英文逐字稿，行號是全流程錨點
+<base>_transcript.txt 原始字幕
+.{base}_work/        中間產物（可續跑用）
+```
 
-```markdown
+分流稿的 frontmatter：
+
+```yaml
 ---
-type: yt_transcript_zh
+type: yt_triage
 date: YYYY-MM-DD
 source: YouTube
 youtube_url: <URL>
 channel: <頻道名>
-video_title: <影片標題>
-tags: [標籤]
+video_title: <未經檔名截斷的原標題>
+upload_date: YYYYMMDD
+map: <base>_map.json
+transcript_lines: <base>_lines.txt
+note: 分流稿。用途是判斷這集要不要進 humanizer。查證資訊全在 map JSON，不在正文。
 ---
-
-# <一句話說明這支影片在談什麼>
-
-> 原始影片：[標題](URL) | 頻道 | 日期
-
-主持人：<這一段他說的話>
-
-Baker：<這一段他說的話>
-
-主持人：<……依字幕順序一路到最後>
-
----
-*本檔為 YouTube 影片字幕的中文全文順稿（AI 生成，未做編輯取捨），僅供參考。*
 ```
+
+**metadata 那幾行不是裝飾。** C 路的 humanizer 只讀分流稿與 `_lines.txt`，metadata 不進 frontmatter 就等於整條線遺失了原始連結與真標題，成品只能從檔名回推（檔名為了避開 Windows 路徑上限已經截斷過），HackMD 上就沒有出處可點。欄位名刻意跟舊版 `yt_article` 一致，下游兩條路才不必各寫一套讀法。實際踩過：2026-08-07 那批 16 集全部沒有 URL，工作目錄裡也沒留 video_id，事後救不回來。
+
+分流稿的規格**跟成品相反**：寧可長寧可雜、具體細節一律保留，而且是機器翻的。它不是寫作素材，下游不得拿它當底稿，也不得編輯它。
+
+## 退回舊版
+
+watcher 用環境變數 `YT_MODE` 切換，預設 `triage`：
+
+```bash
+YT_MODE=article   # 走 yt_to_article.py
+```
+
+⚠️ **這台的 `yt_to_article.py` 是順稿版（中文全文順稿，`type: yt_transcript_zh`），不是更早的文章版。** 退回去得到的是依字幕順序、說話人前綴、無小標的全文順稿，humanizer 對它走的是另一條路。順稿版自己的機械閘門（覆蓋率下限、`##` 小標、`>>` 殘留、說話人標籤種類數、舞台指示、破折號、假名／諺文殘留等，違規即重生最多 3 次）只在 `YT_MODE=article` 時才會作用，地圖版沒有那一層，它的品質靠「兩份地圖取交集」與下游回原文核對。
+
+## 排程
+
+`yt_channel_watcher.py` 依 `channels.json` / `channels_intl.json` 輪巡，本機的國際輪巡由 launchd `com.slking.yt-intl-watcher` 每天 07:00 觸發，跑的是**工作目錄當下 checkout 的分支**。切分支會連帶換掉實際上線的腳本，而且沒有任何提示。單支影片的 timeout 是 5400 秒。
 
 ## 環境需求
 
-- Python 3.10+
-- 套件：`youtube-transcript-api`, `yt-dlp`, `httpx`
-- 環境變數：`ANTHROPIC_API_KEY`（MiniMax Token Plan key, sk-cp-...）、`ANTHROPIC_BASE_URL`（預設 https://api.minimax.io/anthropic）
+- **Python 3.9.6（venv）**。ytmap 全部腳本都有 `from __future__ import annotations`，3.9 可跑；系統 `python3` 缺 `httpx`，不能用
+- 套件：`youtube-transcript-api`, `yt-dlp`, `httpx`；Whisper fallback 另需 `mlx-whisper`
+- 環境變數：`ANTHROPIC_API_KEY`（MiniMax Token Plan key，`sk-cp-` 開頭；用 `sk-api-` 會回 402）、`ANTHROPIC_BASE_URL`（預設 https://api.minimax.io/anthropic）、`MINIMAX_MODEL`（預設 MiniMax-M3）。由 repo 根 `.env` 經 `ytkit/config.py` 載入
 
 ## 錯誤處理
 
-- **無字幕**：告知用戶該影片沒有可用字幕，建議選擇有字幕的影片
-- **API 失敗**：檢查 API key 是否正確、餘額是否充足
-- **字幕太長**：自動依語言切段多次順稿後合併（不是截斷）；單段 60,000 字元只是最後安全網
+- **無字幕**：自動退到本地 Whisper 轉錄。多支影片不要同時轉錄，單機 MLX 記憶體會搶，逐支跑
+- **全部影片同報「沒字幕」**：多半是 YouTube 對這個 IP 的封鎖（IpBlocked/429），不是影片真的沒字幕。要真的下載一次才驗得出來，只 list 看不出來
+- **API 失敗**：檢查 key 開頭是不是 `sk-cp-`、餘額是否充足
+- **中途壞掉**：直接重跑，六步各自會沿用既有產物；要整集重做就刪 `.{base}_work/`
