@@ -435,6 +435,8 @@ final_gate.py <base>_humanized.md
 
 `scripts/upload_hackmd.py` 僅在以下全部成立時執行：三個檔齊全、必改項已處理、final gate 零 `[硬性]`、使用者沒有禁止上傳或要求 dry run。依檔名傳 tag：`_yt_` → `YT訪談摘錄`、`_fb_` → `FB文章`、`_invest_` 或 `_epub_` → `投資筆記`。預設個人空間、`readPermission=guest`。要求原位更新時更新既有筆記，不建立重複筆記。不得輸出 token 或 `.env` 內容。`_yt_` 保留頁尾「本文根據 YouTube 影片內容由 AI 整理生成，僅供參考。」
 
+**`_yt_` 上傳到 HackMD 的不是 `_humanized.md` 全文，是上傳包（2026-09-26 使用者定案）。** 用 `scripts/hackmd_packet.py <base> <精簡說明欄檔> --upload`（原位更新加 `--note-id <id>`）。上傳包＝成品開頭（frontmatter＋H1＋原始影片行）＋給下游編輯的固定指令＋精簡說明欄＋plan (c) 整節＋`_draft.md` 全文（剝掉 draft 自己的 frontmatter／H1，保留行號錨點）。說明欄由 root 手挑：留內容簡介、章節時間碼、持股／利益揭露與來源訪談連結，刪業配、付費推廣、社群連結、求訂閱、免責聲明、hashtag，保持原文不翻譯。指令模板在腳本內，一字不改（含單人口播那句括號）。`_humanized.md` 照舊產生並過 final gate，腳本上傳前會再驗一次。
+
 ## 交付回報
 
 回報可驗證事實，不自評分數也不評語感：產出檔案路徑、錨點認領率、命題清單條數與認領結果、待查清單三區的處數與處理結果、引述佔比、重要修正（漏補／歸屬／數字／專名／譯意／自補因果）、final gate 結果、HackMD URL（未上傳則明說）。
