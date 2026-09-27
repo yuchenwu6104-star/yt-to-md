@@ -11,6 +11,7 @@
 | `yt_to_article.py` | 單支影片 URL → 深度洞察文章（Markdown） |
 | `yt_channel_watcher.py` | 每日自動輪巡頻道，批次處理新影片 |
 | `md_to_fb.py` | 深度文章 → Facebook 貼文格式 |
+| `shorts`（技能） | Podcast 音檔＋校正字幕 → YouTube Shorts（挑片段、跳接、字幕、自製圖卡與開源配圖） |
 
 ---
 
