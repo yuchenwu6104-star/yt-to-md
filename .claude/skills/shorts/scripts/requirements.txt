@@ -1,0 +1,4 @@
+# /shorts 依賴（另需系統 ffmpeg 與 Noto Sans CJK 字型）
+pillow>=10.0
+numpy>=1.24
+faster-whisper>=1.0   # 只用來抓剪接點的字級時間，small 模型 CPU 就夠

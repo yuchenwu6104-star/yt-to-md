@@ -14,6 +14,7 @@
 | `md_to_fb.py` | 深度文章 → Facebook 貼文格式 |
 | `humanizer-zh`（技能） | 去除文章 AI 寫作痕跡、翻譯校正，跑完自動上傳 HackMD |
 | `upload_hackmd.py` | 任一 Markdown → HackMD（回傳可分享網址） |
+| `shorts`（技能） | Podcast 音檔＋校正字幕 → YouTube Shorts（挑片段、跳接、字幕、自製圖卡與開源配圖） |
 
 ---
 
