@@ -137,18 +137,18 @@ def local_chars(a, b):
                 out.append((ch, a + w.start + i * d, a + w.start + (i + 1) * d))
     return out
 
-def _find(chars, key, expect, use_end):
+def _find(chars, key, expect, use_end, tol=2.0):
     best = None
     for i in range(len(chars) - len(key) + 1):
         if "".join(c[0] for c in chars[i:i + len(key)]) == key:
             t = chars[i + len(key) - 1][2] if use_end else chars[i][1]
             if best is None or abs(t - expect) < abs(best - expect):
                 best = t
-    return best if best is not None and abs(best - expect) < 1.2 else None
+    return best if best is not None and abs(best - expect) < tol else None
 
 def word_start(n):
     s0, _, txt = CUES[n]
-    chars = local_chars(max(s0 - 1.5, 0), s0 + 2.0)
+    chars = local_chars(max(s0 - 2.0, 0), s0 + 2.5)
     t = _norm(txt)
     for k in (3, 2, 1):
         hit = _find(chars, t[:k], s0, False)
@@ -158,7 +158,7 @@ def word_start(n):
 
 def word_end(n):
     _, e0, txt = CUES[n]
-    chars = local_chars(max(e0 - 2.0, 0), e0 + 1.5)
+    chars = local_chars(max(e0 - 2.5, 0), e0 + 2.0)
     t = _norm(txt)
     for k in (3, 2, 1):
         hit = _find(chars, t[-k:], e0, True)
@@ -167,21 +167,24 @@ def word_end(n):
     return None
 
 def clip_start(n):
+    """-> (start, offset): offset = how far the audio sits after the SRT time here (0 if no anchor).
+    Some episodes drift 1-1.5 s from their SRT in places; the offset keeps subtitles and scenes in sync."""
     ws = word_start(n)
     if ws is None:
-        return refine_start(CUES[n][0])
+        return refine_start(CUES[n][0]), 0.0
     r = frames_rms(ws - 0.08, ws + 0.04)
-    return ws - 0.08 + int(np.argmin(r)) * 0.01
+    return ws - 0.08 + int(np.argmin(r)) * 0.01, ws - CUES[n][0]
 
-def clip_end(n):
+def clip_end(n, off=0.0):
     we = word_end(n)
-    return refine_end(we if we is not None else CUES[n][1])
+    return refine_end(we if we is not None else CUES[n][1] + off)
 
 # ---------------- EDL ----------------
 class Short:
-    def __init__(self, name, title1, title2, segments, highlights=(), gap=0.12, tail=1.8, sub_override=None):
+    def __init__(self, name, title1, title2, segments, highlights=(), gap=0.12, tail=1.8, sub_override=None, nudge=None):
         """segments: list of (first_cue, last_cue, scene) — inclusive cue ranges from the SRT.
-        Adjacent ranges are played as one continuous clip; out-of-order ranges become jump cuts."""
+        Adjacent ranges are played as one continuous clip; out-of-order ranges become jump cuts.
+        nudge: {first_cue: seconds} shifts a clip's start by hand when verify_cuts hears a leftover syllable."""
         assert CUES, "call configure(src, srt, badge) first"
         self.name, self.title1, self.title2 = name, title1, title2
         self.gap, self.tail = gap, tail
@@ -198,22 +201,24 @@ class Short:
         self.clips, self.scenes = [], []
         t = 0.0
         for r in runs:
-            s = clip_start(r["a"])
-            e_raw = CUES[r["z"]][1]
-            e = clip_end(r["z"])
-            c = dict(a=r["a"], z=r["z"], s=s, e=e, t0=t, t1=t + e - s)
+            s, off = clip_start(r["a"])
+            s += (nudge or {}).get(r["a"], 0.0)
+            e_raw = CUES[r["z"]][1] + off
+            e = clip_end(r["z"], off)
+            c = dict(a=r["a"], z=r["z"], s=s, e=e, off=off, t0=t, t1=t + e - s)
             self.clips.append(c)
             for j, (ca, scene) in enumerate(r["scenes"]):
-                st = t if j == 0 else t + CUES[ca][0] - s
-                en = c["t1"] + gap if j == len(r["scenes"]) - 1 else t + CUES[r["scenes"][j + 1][0]][0] - s
+                st = t if j == 0 else t + CUES[ca][0] + off - s
+                en = c["t1"] + gap if j == len(r["scenes"]) - 1 else t + CUES[r["scenes"][j + 1][0]][0] + off - s
                 self.scenes.append(dict(scene=scene, t0=st, t1=en))
-            print(f"{name} {'/'.join(x[1] for x in r['scenes']):22s} cues {r['a']}-{r['z']}  {s:8.2f}->{e:8.2f}  (tail {e - e_raw:+.2f}s)")
+            print(f"{name} {'/'.join(x[1] for x in r['scenes']):22s} cues {r['a']}-{r['z']}  {s:8.2f}->{e:8.2f}  (tail {e - e_raw:+.2f}s, srt offset {off:+.2f}s)")
             t = c["t1"] + gap
         self.dur = self.clips[-1]["t1"] + tail
         self.subs = []
         for c in self.clips:
             for n in range(c["a"], c["z"] + 1):
                 cs, ce, txt = CUES[n]
+                cs, ce = cs + c["off"], ce + c["off"]
                 txt = self.sub_override.get(n, txt)
                 if not txt:
                     continue
@@ -244,7 +249,7 @@ class Short:
         """Timeline time at which SRT cue n starts."""
         for c in self.clips:
             if c["a"] <= n <= c["z"]:
-                return c["t0"] + max(CUES[n][0] - c["s"], 0)
+                return c["t0"] + max(CUES[n][0] + c["off"] - c["s"], 0)
         raise KeyError(n)
 
     # ---- audio ----

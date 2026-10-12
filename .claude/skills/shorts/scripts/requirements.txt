@@ -2,3 +2,4 @@
 pillow>=10.0
 numpy>=1.24
 faster-whisper>=1.0   # 只用來抓剪接點的字級時間，small 模型 CPU 就夠
+av>=11,<16          # 實測 PyAV 19 拿掉了 faster-whisper 1.2 用的 metadata_errors 參數（verify_cuts 會壞），15.1 可用
