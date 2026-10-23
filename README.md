@@ -11,6 +11,7 @@
 | `yt_to_article.py` | 單支影片 URL → 深度洞察文章（Markdown） |
 | `yt_channel_watcher.py` | 每日自動輪巡頻道，批次處理新影片 |
 | `md_to_fb.py` | 深度文章 → Facebook 貼文格式 |
+| `podcast-video/podcast_to_video.py` | Podcast mp3＋SRT 字幕 → 卷軸式逐字稿 YouTube 影片（見 [podcast-video/README.md](podcast-video/README.md)） |
 
 ---
 
