@@ -1,4 +1,4 @@
-"""捲軸式逐句字幕影片：目前這句是墨黑色，前後幾句淡灰，畫面一次露出一大段方便截圖。
+"""捲軸式逐句字幕影片：講過和正在講的句子是墨黑色，還沒講到的淡灰，畫面一次露出一大段方便截圖。
 
 用法：
   python3 podcast_to_video.py 字幕.srt 音檔.mp3 封面.png 字型.otf 輸出.mp4 --ep "第 173 集"
@@ -18,8 +18,7 @@ a = ap.parse_args()
 W, H = 1920, 1080
 BG = np.array([244, 239, 228], np.float32)
 INK = np.array([28, 28, 28], np.float32)
-PAST = np.array([165, 158, 145], np.float32)
-NEXT = np.array([128, 122, 111], np.float32)
+NEXT = np.array([160, 153, 140], np.float32)   # 還沒講到的句子
 FS, LH, GAP = 64, 94, 30          # 字級、行高、句與句之間距
 X0, TEXT_W = 230, 1460
 ANCHOR = 400                        # 目前句子頂端停在畫面的 y
@@ -119,7 +118,7 @@ for f in range(N):
             m = mask(j); top = int(round(ys[j] + off)); h = m.shape[0]
             y0, y1 = max(top, TOP), min(top + h, BOT)
             if y1 > y0:
-                col = INK if j == i else (PAST if j < i else NEXT)
+                col = INK if j <= i else NEXT
                 mm = m[y0 - top:y1 - top] * fade[y0:y1]
                 reg = fr[y0:y1, X0:X0 + m.shape[1]]
                 reg += (col - reg) * mm
